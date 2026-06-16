@@ -384,7 +384,7 @@ async def analyze_channel(force: bool = False, user=Depends(get_current_user)):
     if not force and existing.get("analyzed_at"):
         try:
             ts = datetime.fromisoformat(existing["analyzed_at"])
-            if (datetime.now(timezone.utc) - ts) < timedelta(hours=24):
+            if (datetime.now(timezone.utc) - ts) < timedelta(hours=72):
                 return {"ok": True, "auto_profile": existing, "videos": [], "meta": prof.get("meta"), "cached": True}
         except Exception:
             pass

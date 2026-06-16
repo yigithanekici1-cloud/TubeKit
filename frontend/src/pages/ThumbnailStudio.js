@@ -52,23 +52,24 @@ function AIPanel() {
   const [history, setHistory] = useState([]);
   const [refImages, setRefImages] = useState([]); // array of data URLs, max 3
   const [useChannel, setUseChannel] = useState(false);
+  const [compareMode, setCompareMode] = useState(false);
+  const [imageB, setImageB] = useState(null); // vanilla version for A/B
   const refFileInput = useRef(null);
 
   useEffect(() => {
     api.get("/thumbnail/list").then((r) => setHistory(r.data.items)).catch(() => {});
-    // P1: pick up seed from Idea Generator
+    // P1: pick up seed from Idea Generator (deferred to avoid set-state-in-effect rule)
     const seedPrompt = sessionStorage.getItem("tk_seed_prompt");
     const seedTitle = sessionStorage.getItem("tk_seed_title");
-    if (seedPrompt) {
-      setPrompt(seedPrompt);
-      sessionStorage.removeItem("tk_seed_prompt");
-    }
-    if (seedTitle) {
-      setTitle(seedTitle);
-      sessionStorage.removeItem("tk_seed_title");
-    }
     if (seedPrompt || seedTitle) {
-      toast.success(lang === "tr" ? "Fikirden taşındı, üretmeye hazır." : "Idea loaded — ready to generate.");
+      sessionStorage.removeItem("tk_seed_prompt");
+      sessionStorage.removeItem("tk_seed_title");
+      const tid = setTimeout(() => {
+        if (seedPrompt) setPrompt(seedPrompt);
+        if (seedTitle) setTitle(seedTitle);
+        toast.success(lang === "tr" ? "Fikirden taşındı, üretmeye hazır." : "Idea loaded — ready to generate.");
+      }, 0);
+      return () => clearTimeout(tid);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -97,13 +98,25 @@ function AIPanel() {
     }
     setLoading(true);
     setImage(null);
+    setImageB(null);
     try {
-      const { data } = await api.post("/thumbnail/generate", {
+      const basePayload = {
         prompt, title_text: title, style, language: lang,
         reference_images: refImages,
-        use_channel_context: useChannel,
-      });
-      setImage(data.image);
+      };
+      if (compareMode && useChannel) {
+        const [r1, r2] = await Promise.all([
+          api.post("/thumbnail/generate", { ...basePayload, use_channel_context: true }),
+          api.post("/thumbnail/generate", { ...basePayload, use_channel_context: false }),
+        ]);
+        setImage(r1.data.image);
+        setImageB(r2.data.image);
+      } else {
+        const { data } = await api.post("/thumbnail/generate", {
+          ...basePayload, use_channel_context: useChannel,
+        });
+        setImage(data.image);
+      }
       const hist = await api.get("/thumbnail/list");
       setHistory(hist.data.items);
       toast.success(lang === "tr" ? "Thumbnail hazır" : "Thumbnail ready");
@@ -219,6 +232,18 @@ function AIPanel() {
 
         <div className="mb-4">
           <ChannelContextToggle value={useChannel} onChange={setUseChannel} testid="studio-channel-toggle" />
+          {useChannel && (
+            <label className="mt-2 flex items-center gap-2 text-xs font-mono text-zinc-400 cursor-pointer" data-testid="studio-compare-toggle">
+              <input
+                type="checkbox"
+                checked={compareMode}
+                onChange={(e) => setCompareMode(e.target.checked)}
+                className="accent-[#FF3B30]"
+                data-testid="studio-compare-input"
+              />
+              {lang === "tr" ? "A/B KARŞILAŞTIR — kanal stilli + genel sürümü yan yana üret" : "A/B COMPARE — generate channel-styled + vanilla side by side"}
+            </label>
+          )}
         </div>
 
         <button onClick={generate} disabled={loading} className="tk-btn-primary" data-testid="ai-generate-btn">
@@ -226,18 +251,37 @@ function AIPanel() {
           {loading ? t("generating") : t("generate")}
         </button>
 
-        <div className="mt-6 aspect-video bg-black border border-zinc-800 rounded-sm overflow-hidden flex items-center justify-center" data-testid="ai-preview">
-          {loading ? (
-            <div className="flex flex-col items-center text-zinc-500">
-              <Loader2 className="w-8 h-8 animate-spin mb-3" />
-              <span className="font-mono text-xs">{lang === "tr" ? "ÜRETİLİYOR..." : "GENERATING..."}</span>
+        <div className="mt-6">
+          {imageB ? (
+            <div className="grid grid-cols-2 gap-3" data-testid="ab-compare-grid">
+              <div>
+                <div className="font-mono text-[10px] text-[#FF3B30] mb-1.5">A · {lang === "tr" ? "KANALIMA ÖZEL" : "FOR MY CHANNEL"}</div>
+                <div className="aspect-video bg-black border border-[#FF3B30]/50 rounded-sm overflow-hidden">
+                  <img src={image} alt="A" className="w-full h-full object-cover" data-testid="ab-image-a" />
+                </div>
+              </div>
+              <div>
+                <div className="font-mono text-[10px] text-zinc-500 mb-1.5">B · {lang === "tr" ? "GENEL" : "VANILLA"}</div>
+                <div className="aspect-video bg-black border border-zinc-800 rounded-sm overflow-hidden">
+                  <img src={imageB} alt="B" className="w-full h-full object-cover" data-testid="ab-image-b" />
+                </div>
+              </div>
             </div>
-          ) : image ? (
-            <img src={image} alt="thumbnail" className="w-full h-full object-cover" />
           ) : (
-            <div className="text-zinc-700 flex flex-col items-center">
-              <ImageIcon className="w-10 h-10 mb-2" />
-              <span className="font-mono text-xs">16 : 9</span>
+            <div className="aspect-video bg-black border border-zinc-800 rounded-sm overflow-hidden flex items-center justify-center" data-testid="ai-preview">
+              {loading ? (
+                <div className="flex flex-col items-center text-zinc-500">
+                  <Loader2 className="w-8 h-8 animate-spin mb-3" />
+                  <span className="font-mono text-xs">{lang === "tr" ? "ÜRETİLİYOR..." : "GENERATING..."}</span>
+                </div>
+              ) : image ? (
+                <img src={image} alt="thumbnail" className="w-full h-full object-cover" />
+              ) : (
+                <div className="text-zinc-700 flex flex-col items-center">
+                  <ImageIcon className="w-10 h-10 mb-2" />
+                  <span className="font-mono text-xs">16 : 9</span>
+                </div>
+              )}
             </div>
           )}
         </div>
