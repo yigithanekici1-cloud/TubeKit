@@ -3,6 +3,7 @@ import { Sparkles, Upload, Type, Download, Save, Loader2, Wand2, Image as ImageI
 import api, { formatApiError } from "@/lib/api";
 import { useLang } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
+import ChannelContextToggle from "@/components/ChannelContextToggle";
 
 const STYLES = [
   { id: "vibrant", labelTr: "Canlı", labelEn: "Vibrant" },
@@ -50,6 +51,7 @@ function AIPanel() {
   const [image, setImage] = useState(null);
   const [history, setHistory] = useState([]);
   const [refImages, setRefImages] = useState([]); // array of data URLs, max 3
+  const [useChannel, setUseChannel] = useState(false);
   const refFileInput = useRef(null);
 
   useEffect(() => {
@@ -84,6 +86,7 @@ function AIPanel() {
       const { data } = await api.post("/thumbnail/generate", {
         prompt, title_text: title, style, language: lang,
         reference_images: refImages,
+        use_channel_context: useChannel,
       });
       setImage(data.image);
       const hist = await api.get("/thumbnail/list");
@@ -197,6 +200,10 @@ function AIPanel() {
               ))}
             </div>
           </div>
+        </div>
+
+        <div className="mb-4">
+          <ChannelContextToggle value={useChannel} onChange={setUseChannel} testid="studio-channel-toggle" />
         </div>
 
         <button onClick={generate} disabled={loading} className="tk-btn-primary" data-testid="ai-generate-btn">

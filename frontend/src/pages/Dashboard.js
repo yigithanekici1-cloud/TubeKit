@@ -4,6 +4,7 @@ import { ImagePlus, FileText, Lightbulb, ArrowRight, Image as ImageIcon } from "
 import api from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLang } from "@/contexts/LanguageContext";
+import ChannelProfileCard from "@/components/ChannelProfileCard";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -34,6 +35,8 @@ export default function Dashboard() {
         <StatCard label={t("statsSEO")} value={stats?.seo_drafts ?? 0} testid="stat-seo" />
         <StatCard label={t("statsIdeas")} value={stats?.idea_sessions ?? 0} testid="stat-ideas" />
       </div>
+
+      <ChannelProfileCard />
 
       <div className="grid md:grid-cols-3 gap-4 mb-12">
         {cards.map((c) => (

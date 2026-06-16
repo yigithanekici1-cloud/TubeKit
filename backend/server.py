@@ -97,19 +97,20 @@ class SEORequest(BaseModel):
     keywords: Optional[str] = ""
     audience: Optional[str] = ""
     language: str = "tr"
-    # Optional advanced fields for more precise output
-    video_format: Optional[str] = ""  # tutorial / vlog / review / story...
-    duration: Optional[str] = ""  # short / 5-10 min / 15-30 min / long
-    tone: Optional[str] = ""  # casual / energetic / educational / dramatic
-    unique_angle: Optional[str] = ""  # what makes this video different
-    cta: Optional[str] = ""  # specific call to action
+    video_format: Optional[str] = ""
+    duration: Optional[str] = ""
+    tone: Optional[str] = ""
+    unique_angle: Optional[str] = ""
+    cta: Optional[str] = ""
+    use_channel_context: Optional[bool] = False
 
 
 class IdeaRequest(BaseModel):
     niche: str
     language: str = "tr"
     count: int = 6
-    reference_urls: Optional[List[str]] = None  # YouTube video URLs to analyze
+    reference_urls: Optional[List[str]] = None
+    use_channel_context: Optional[bool] = False
 
 
 class ThumbnailRequest(BaseModel):
@@ -117,8 +118,14 @@ class ThumbnailRequest(BaseModel):
     style: Optional[str] = "vibrant"
     title_text: Optional[str] = ""
     language: str = "tr"
-    reference_image: Optional[str] = None  # legacy single (kept for back-compat)
-    reference_images: Optional[List[str]] = None  # up to 3 base64/data URLs
+    reference_image: Optional[str] = None
+    reference_images: Optional[List[str]] = None
+    use_channel_context: Optional[bool] = False
+
+
+class ChannelProfileIn(BaseModel):
+    description: Optional[str] = ""
+    url: Optional[str] = ""
 
 
 class ThumbnailSave(BaseModel):
@@ -204,6 +211,84 @@ async def fetch_youtube_info(url: str) -> Optional[dict]:
     return None
 
 
+async def fetch_channel_page(url: str) -> dict:
+    """Scrape a YouTube channel page for basic meta (title + description)."""
+    out = {"url": url, "title": "", "description": ""}
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as c:
+            r = await c.get(url)
+            if r.status_code == 200:
+                html = r.text
+                m1 = re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html)
+                m2 = re.search(r'<meta\s+(?:property="og:description"|name="description")\s+content="([^"]+)"', html)
+                if m1:
+                    out["title"] = m1.group(1)
+                if m2:
+                    out["description"] = m2.group(1)
+    except Exception:
+        logger.exception("channel page scrape failed for %s", url)
+    return out
+
+
+def _channel_context_block(profile: Optional[dict]) -> str:
+    if not profile:
+        return ""
+    parts = []
+    if profile.get("description"):
+        parts.append(f"Creator's own description of the channel: {profile['description']}")
+    meta = profile.get("meta") or {}
+    if meta.get("title"):
+        parts.append(f"Channel name: {meta['title']}")
+    if meta.get("description"):
+        parts.append(f"Channel public description: {meta['description']}")
+    if profile.get("url"):
+        parts.append(f"Channel URL: {profile['url']}")
+    if not parts:
+        return ""
+    return (
+        "\n\n[CHANNEL CONTEXT — tailor the output to fit this creator's existing brand, tone, and audience]\n"
+        + "\n".join(parts)
+    )
+
+
+async def get_channel_profile(user_id: str) -> Optional[dict]:
+    return await db.channel_profiles.find_one({"user_id": user_id})
+
+
+# ---------------- Channel Profile Routes ----------------
+@api.get("/profile/channel")
+async def get_profile(user=Depends(get_current_user)):
+    prof = await get_channel_profile(user["id"])
+    if not prof:
+        return {"description": "", "url": "", "meta": None}
+    return {
+        "description": prof.get("description", ""),
+        "url": prof.get("url", ""),
+        "meta": prof.get("meta"),
+        "updated_at": prof.get("updated_at"),
+    }
+
+
+@api.post("/profile/channel")
+async def save_profile(data: ChannelProfileIn, user=Depends(get_current_user)):
+    meta = None
+    if data.url and data.url.strip():
+        meta = await fetch_channel_page(data.url.strip())
+    doc = {
+        "user_id": user["id"],
+        "description": (data.description or "").strip(),
+        "url": (data.url or "").strip(),
+        "meta": meta,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.channel_profiles.update_one(
+        {"user_id": user["id"]},
+        {"$set": doc, "$setOnInsert": {"created_at": doc["updated_at"]}},
+        upsert=True,
+    )
+    return {"ok": True, "meta": meta}
+
+
 # ---------------- SEO Routes ----------------
 @api.post("/seo/generate")
 async def seo_generate(data: SEORequest, user=Depends(get_current_user)):
@@ -223,11 +308,15 @@ async def seo_generate(data: SEORequest, user=Depends(get_current_user)):
         advanced_lines.append(f"Desired call-to-action: {data.cta}")
     advanced_block = ("\n" + "\n".join(advanced_lines)) if advanced_lines else ""
 
+    channel_block = ""
+    if data.use_channel_context:
+        channel_block = _channel_context_block(await get_channel_profile(user["id"]))
+
     prompt = f"""Generate YouTube SEO assets for a video.
 
 Topic: {data.topic}
 Target keywords: {data.keywords or 'auto-detect from topic'}
-Audience: {data.audience or 'general'}{advanced_block}
+Audience: {data.audience or 'general'}{advanced_block}{channel_block}
 
 Use ALL of the optional fields above to make the titles and description more precise and on-target. The titles must reflect the format and tone. The description must weave in the unique angle and end with the specific CTA if provided.
 
@@ -282,7 +371,7 @@ async def ideas_generate(data: IdeaRequest, user=Depends(get_current_user)):
                 + "\n".join(lines)
             )
 
-    prompt = f"""Brainstorm {count} fresh, click-worthy YouTube video ideas for the niche: {data.niche}.{reference_block}
+    prompt = f"""Brainstorm {count} fresh, click-worthy YouTube video ideas for the niche: {data.niche}.{reference_block}{_channel_context_block(await get_channel_profile(user["id"])) if data.use_channel_context else ""}
 
 Return ONLY this JSON shape:
 {{
@@ -330,6 +419,14 @@ async def thumbnail_generate(data: ThumbnailRequest, user=Depends(get_current_us
     style_desc = style_map.get(data.style, style_map["vibrant"])
     title_part = f' Include the text overlay "{data.title_text}" in bold large impactful typography.' if data.title_text else ""
 
+    channel_hint = ""
+    if data.use_channel_context:
+        prof = await get_channel_profile(user["id"])
+        if prof:
+            desc = prof.get("description") or ((prof.get("meta") or {}).get("description") or "")
+            if desc:
+                channel_hint = f" The thumbnail must visually match this creator's existing brand/tone: {desc[:300]}."
+
     # Collect refs from either new multi field or legacy single field
     refs_raw: List[str] = []
     if data.reference_images:
@@ -349,7 +446,7 @@ async def thumbnail_generate(data: ThumbnailRequest, user=Depends(get_current_us
             f"YouTube thumbnail, 16:9 widescreen aspect ratio, 1280x720, "
             f"eye-catching click-worthy design. Subject: {data.prompt}. "
             f"Style: {style_desc}. Composition: rule of thirds, expressive face if person, "
-            f"dramatic contrast, high saturation, sharp focus.{title_part}"
+            f"dramatic contrast, high saturation, sharp focus.{title_part}{channel_hint}"
         )
     elif n == 1:
         final_prompt = (
@@ -357,7 +454,7 @@ async def thumbnail_generate(data: ThumbnailRequest, user=Depends(get_current_us
             f"Keep the subject's face and identifying features clearly recognizable. "
             f"16:9 widescreen, 1280x720, eye-catching click-worthy design. "
             f"Scene/context: {data.prompt}. Style: {style_desc}. "
-            f"Composition: rule of thirds, expressive face, dramatic contrast, high saturation, sharp focus.{title_part}"
+            f"Composition: rule of thirds, expressive face, dramatic contrast, high saturation, sharp focus.{title_part}{channel_hint}"
         )
     else:
         final_prompt = (
@@ -366,7 +463,7 @@ async def thumbnail_generate(data: ThumbnailRequest, user=Depends(get_current_us
             f"Keep faces recognizable if people are present. "
             f"16:9 widescreen, 1280x720, eye-catching click-worthy design. "
             f"Scene/context the user wants: {data.prompt}. Style: {style_desc}. "
-            f"Composition: rule of thirds, dramatic contrast, high saturation, sharp focus.{title_part}"
+            f"Composition: rule of thirds, dramatic contrast, high saturation, sharp focus.{title_part}{channel_hint}"
         )
 
     chat = LlmChat(

@@ -3,6 +3,7 @@ import { Loader2, Sparkles, Copy, Check, Settings2 } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
 import { useLang } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
+import ChannelContextToggle from "@/components/ChannelContextToggle";
 
 export default function SEOWriter() {
   const { lang, t } = useLang();
@@ -14,6 +15,7 @@ export default function SEOWriter() {
   const [tone, setTone] = useState("");
   const [uniqueAngle, setUniqueAngle] = useState("");
   const [cta, setCta] = useState("");
+  const [useChannel, setUseChannel] = useState(false);
   const [showAdv, setShowAdv] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -28,6 +30,7 @@ export default function SEOWriter() {
         topic, keywords, audience, language: lang,
         video_format: videoFormat, duration, tone,
         unique_angle: uniqueAngle, cta,
+        use_channel_context: useChannel,
       });
       setResult(data);
     } catch (e2) {
@@ -137,6 +140,8 @@ export default function SEOWriter() {
               </div>
             )}
           </div>
+
+          <ChannelContextToggle value={useChannel} onChange={setUseChannel} testid="seo-channel-toggle" />
 
           <button type="submit" disabled={loading} className="tk-btn-primary w-full justify-center" data-testid="seo-generate-btn">
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}

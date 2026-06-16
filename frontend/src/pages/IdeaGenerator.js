@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import api, { formatApiError } from "@/lib/api";
 import { useLang } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
+import ChannelContextToggle from "@/components/ChannelContextToggle";
 
 export default function IdeaGenerator() {
   const { lang, t } = useLang();
@@ -15,6 +16,7 @@ export default function IdeaGenerator() {
   const [refUrls, setRefUrls] = useState([""]);
   const [refsMeta, setRefsMeta] = useState([]);
   const [showRefs, setShowRefs] = useState(false);
+  const [useChannel, setUseChannel] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -24,7 +26,10 @@ export default function IdeaGenerator() {
     setRefsMeta([]);
     try {
       const urls = refUrls.map((u) => u.trim()).filter(Boolean);
-      const { data } = await api.post("/ideas/generate", { niche, count, language: lang, reference_urls: urls });
+      const { data } = await api.post("/ideas/generate", {
+        niche, count, language: lang, reference_urls: urls,
+        use_channel_context: useChannel,
+      });
       setIdeas(data.ideas || []);
       setRefsMeta(data.references || []);
     } catch (e2) {
@@ -83,6 +88,10 @@ export default function IdeaGenerator() {
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lightbulb className="w-4 h-4" />}
             {loading ? t("generating") : t("generate")}
           </button>
+        </div>
+
+        <div className="border-t border-zinc-800 pt-4">
+          <ChannelContextToggle value={useChannel} onChange={setUseChannel} testid="ideas-channel-toggle" />
         </div>
 
         <div className="border-t border-zinc-800 pt-4">
