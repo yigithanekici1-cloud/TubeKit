@@ -56,6 +56,21 @@ function AIPanel() {
 
   useEffect(() => {
     api.get("/thumbnail/list").then((r) => setHistory(r.data.items)).catch(() => {});
+    // P1: pick up seed from Idea Generator
+    const seedPrompt = sessionStorage.getItem("tk_seed_prompt");
+    const seedTitle = sessionStorage.getItem("tk_seed_title");
+    if (seedPrompt) {
+      setPrompt(seedPrompt);
+      sessionStorage.removeItem("tk_seed_prompt");
+    }
+    if (seedTitle) {
+      setTitle(seedTitle);
+      sessionStorage.removeItem("tk_seed_title");
+    }
+    if (seedPrompt || seedTitle) {
+      toast.success(lang === "tr" ? "Fikirden taşındı, üretmeye hazır." : "Idea loaded — ready to generate.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onUploadRef = (e) => {

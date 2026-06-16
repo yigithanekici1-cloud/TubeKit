@@ -8,7 +8,9 @@ export default function ChannelProfileCard() {
   const { lang, t } = useLang();
   const [profile, setProfile] = useState(null);
   const [editing, setEditing] = useState(false);
+  const [editAuto, setEditAuto] = useState(false);
   const [description, setDescription] = useState("");
+  const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -18,6 +20,7 @@ export default function ChannelProfileCard() {
     const { data } = await api.get("/profile/channel");
     setProfile(data);
     setDescription(data.description || "");
+    setName(data.name || "");
     setUrl(data.url || "");
   };
 
@@ -26,6 +29,7 @@ export default function ChannelProfileCard() {
       .then((r) => {
         setProfile(r.data);
         setDescription(r.data.description || "");
+        setName(r.data.name || "");
         setUrl(r.data.url || "");
         if (!r.data.description && !r.data.url) setEditing(true);
       })
@@ -49,7 +53,7 @@ export default function ChannelProfileCard() {
   const save = async () => {
     setSaving(true);
     try {
-      await api.post("/profile/channel", { description, url });
+      await api.post("/profile/channel", { description, url, name });
       const { data } = await api.get("/profile/channel");
       setProfile(data);
       setEditing(false);
@@ -107,6 +111,18 @@ export default function ChannelProfileCard() {
         <div className="space-y-3">
           <div>
             <label className="font-mono text-xs text-zinc-500 mb-1.5 block">
+              {lang === "tr" ? "KANAL ADI (OPSİYONEL)" : "CHANNEL NAME (OPTIONAL)"}
+            </label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={lang === "tr" ? "Ana Kanalım" : "My Main Channel"}
+              className="tk-input"
+              data-testid="channel-name-input"
+            />
+          </div>
+          <div>
+            <label className="font-mono text-xs text-zinc-500 mb-1.5 block">
               {lang === "tr" ? "KANAL TANIMI" : "CHANNEL DESCRIPTION"}
             </label>
             <textarea
@@ -146,6 +162,9 @@ export default function ChannelProfileCard() {
         </div>
       ) : (
         <div className="space-y-3">
+          {profile.name && (
+            <div className="font-display text-lg text-zinc-100" data-testid="channel-name-display">{profile.name}</div>
+          )}
           {profile.description && (
             <p className="text-sm text-zinc-300 whitespace-pre-line">{profile.description}</p>
           )}
@@ -184,37 +203,34 @@ export default function ChannelProfileCard() {
 
           {profile.auto_profile && (
             <div className="mt-4 pt-4 border-t border-zinc-800" data-testid="channel-auto-profile">
-              <div className="font-mono text-xs text-zinc-500 mb-3 inline-flex items-center gap-2">
-                <Wand2 className="w-3 h-3 text-[#FF3B30]" />
-                {lang === "tr" ? "AI KANAL STİL ANALİZİ" : "AI CHANNEL STYLE ANALYSIS"}
-              </div>
-              {profile.auto_profile.summary && (
-                <p className="text-sm text-zinc-200 mb-3">{profile.auto_profile.summary}</p>
-              )}
-              <div className="grid sm:grid-cols-2 gap-3">
-                {profile.auto_profile.tone && (
-                  <AutoField icon={Type} label={lang === "tr" ? "Ton" : "Tone"} value={profile.auto_profile.tone} />
-                )}
-                {profile.auto_profile.audience && (
-                  <AutoField icon={Users} label={lang === "tr" ? "Kitle" : "Audience"} value={profile.auto_profile.audience} />
-                )}
-                {profile.auto_profile.title_pattern && (
-                  <AutoField icon={Hash} label={lang === "tr" ? "Başlık Formülü" : "Title Pattern"} value={profile.auto_profile.title_pattern} />
-                )}
-                {profile.auto_profile.color_palette && (
-                  <AutoField icon={Palette} label={lang === "tr" ? "Renk Paleti" : "Color Palette"} value={profile.auto_profile.color_palette} />
-                )}
-              </div>
-              {profile.auto_profile.themes?.length > 0 && (
-                <div className="mt-3">
-                  <div className="font-mono text-[10px] text-zinc-500 mb-1.5">{lang === "tr" ? "TEMALAR" : "THEMES"}</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {profile.auto_profile.themes.map((th, i) => (
-                      <span key={i} className="px-2 py-0.5 bg-zinc-900 border border-zinc-800 text-xs text-zinc-300 rounded-sm">{th}</span>
-                    ))}
-                  </div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="font-mono text-xs text-zinc-500 inline-flex items-center gap-2">
+                  <Wand2 className="w-3 h-3 text-[#FF3B30]" />
+                  {lang === "tr" ? "AI KANAL STİL ANALİZİ" : "AI CHANNEL STYLE ANALYSIS"}
                 </div>
-              )}
+                <button
+                  onClick={() => setEditAuto(!editAuto)}
+                  data-testid="channel-auto-edit-toggle"
+                  className="text-xs font-mono text-zinc-400 hover:text-white inline-flex items-center gap-1.5"
+                >
+                  <Edit3 className="w-3 h-3" />
+                  {editAuto ? (lang === "tr" ? "BİTİR" : "DONE") : (lang === "tr" ? "DÜZENLE" : "EDIT")}
+                </button>
+              </div>
+              <AutoProfileView
+                data={profile.auto_profile}
+                editing={editAuto}
+                lang={lang}
+                onSave={async (patch) => {
+                  try {
+                    await api.patch("/profile/channel/auto", patch);
+                    await reload();
+                    toast.success(lang === "tr" ? "Güncellendi" : "Updated");
+                  } catch (e) {
+                    toast.error(formatApiError(e.response?.data?.detail) || e.message);
+                  }
+                }}
+              />
             </div>
           )}
         </div>
@@ -230,6 +246,89 @@ function AutoField({ icon: Icon, label, value }) {
         <Icon className="w-3 h-3" /> {label.toUpperCase()}
       </div>
       <div className="text-xs text-zinc-200">{value}</div>
+    </div>
+  );
+}
+
+function EditableField({ icon: Icon, label, value, onCommit, multiline }) {
+  const [v, setV] = useState(value || "");
+  const [touched, setTouched] = useState(false);
+  return (
+    <div className="bg-zinc-950/50 border border-zinc-800 rounded-sm p-3">
+      <div className="font-mono text-[10px] text-zinc-500 mb-1 inline-flex items-center gap-1.5">
+        <Icon className="w-3 h-3" /> {label.toUpperCase()}
+      </div>
+      {multiline ? (
+        <textarea
+          value={v}
+          rows={2}
+          onChange={(e) => { setV(e.target.value); setTouched(true); }}
+          onBlur={() => touched && onCommit(v)}
+          className="tk-input text-xs resize-none"
+        />
+      ) : (
+        <input
+          value={v}
+          onChange={(e) => { setV(e.target.value); setTouched(true); }}
+          onBlur={() => touched && onCommit(v)}
+          className="tk-input text-xs"
+        />
+      )}
+    </div>
+  );
+}
+
+function AutoProfileView({ data, editing, lang, onSave }) {
+  const [themes, setThemes] = useState((data?.themes || []).join(", "));
+
+  if (editing) {
+    return (
+      <div>
+        <div className="font-mono text-[10px] text-zinc-500 mb-1">SUMMARY</div>
+        <textarea
+          defaultValue={data.summary || ""}
+          rows={2}
+          onBlur={(e) => e.target.value !== (data.summary || "") && onSave({ summary: e.target.value })}
+          className="tk-input text-sm resize-none mb-3"
+        />
+        <div className="grid sm:grid-cols-2 gap-3">
+          <EditableField icon={Type} label={lang === "tr" ? "Ton" : "Tone"} value={data.tone} onCommit={(v) => onSave({ tone: v })} />
+          <EditableField icon={Users} label={lang === "tr" ? "Kitle" : "Audience"} value={data.audience} onCommit={(v) => onSave({ audience: v })} />
+          <EditableField icon={Hash} label={lang === "tr" ? "Başlık Formülü" : "Title Pattern"} value={data.title_pattern} onCommit={(v) => onSave({ title_pattern: v })} multiline />
+          <EditableField icon={Palette} label={lang === "tr" ? "Renk Paleti" : "Color Palette"} value={data.color_palette} onCommit={(v) => onSave({ color_palette: v })} />
+        </div>
+        <div className="mt-3">
+          <div className="font-mono text-[10px] text-zinc-500 mb-1.5">{lang === "tr" ? "TEMALAR (VİRGÜLLE AYIR)" : "THEMES (COMMA-SEPARATED)"}</div>
+          <input
+            value={themes}
+            onChange={(e) => setThemes(e.target.value)}
+            onBlur={() => onSave({ themes: themes.split(",").map((s) => s.trim()).filter(Boolean) })}
+            className="tk-input text-xs"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {data.summary && <p className="text-sm text-zinc-200 mb-3">{data.summary}</p>}
+      <div className="grid sm:grid-cols-2 gap-3">
+        {data.tone && <AutoField icon={Type} label={lang === "tr" ? "Ton" : "Tone"} value={data.tone} />}
+        {data.audience && <AutoField icon={Users} label={lang === "tr" ? "Kitle" : "Audience"} value={data.audience} />}
+        {data.title_pattern && <AutoField icon={Hash} label={lang === "tr" ? "Başlık Formülü" : "Title Pattern"} value={data.title_pattern} />}
+        {data.color_palette && <AutoField icon={Palette} label={lang === "tr" ? "Renk Paleti" : "Color Palette"} value={data.color_palette} />}
+      </div>
+      {data.themes?.length > 0 && (
+        <div className="mt-3">
+          <div className="font-mono text-[10px] text-zinc-500 mb-1.5">{lang === "tr" ? "TEMALAR" : "THEMES"}</div>
+          <div className="flex flex-wrap gap-1.5">
+            {data.themes.map((th, i) => (
+              <span key={i} className="px-2 py-0.5 bg-zinc-900 border border-zinc-800 text-xs text-zinc-300 rounded-sm">{th}</span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -126,6 +126,16 @@ class ThumbnailRequest(BaseModel):
 class ChannelProfileIn(BaseModel):
     description: Optional[str] = ""
     url: Optional[str] = ""
+    name: Optional[str] = ""  # P3: optional channel name
+
+
+class AutoProfilePatch(BaseModel):
+    tone: Optional[str] = None
+    audience: Optional[str] = None
+    title_pattern: Optional[str] = None
+    color_palette: Optional[str] = None
+    themes: Optional[List[str]] = None
+    summary: Optional[str] = None
 
 
 class ThumbnailSave(BaseModel):
@@ -308,6 +318,7 @@ async def get_profile(user=Depends(get_current_user)):
     return {
         "description": prof.get("description", ""),
         "url": prof.get("url", ""),
+        "name": prof.get("name", ""),
         "meta": prof.get("meta"),
         "auto_profile": prof.get("auto_profile"),
         "updated_at": prof.get("updated_at"),
@@ -323,6 +334,7 @@ async def save_profile(data: ChannelProfileIn, user=Depends(get_current_user)):
         "user_id": user["id"],
         "description": (data.description or "").strip(),
         "url": (data.url or "").strip(),
+        "name": (data.name or "").strip(),
         "meta": meta,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -334,12 +346,39 @@ async def save_profile(data: ChannelProfileIn, user=Depends(get_current_user)):
     return {"ok": True, "meta": meta}
 
 
+@api.patch("/profile/channel/auto")
+async def patch_auto_profile(data: AutoProfilePatch, user=Depends(get_current_user)):
+    """P2a: User overrides any auto-profile field manually."""
+    prof = await get_channel_profile(user["id"])
+    if not prof:
+        raise HTTPException(404, "Profil bulunamadı")
+    current = prof.get("auto_profile") or {}
+    patch = {k: v for k, v in data.model_dump().items() if v is not None}
+    current.update(patch)
+    current["edited_at"] = datetime.now(timezone.utc).isoformat()
+    await db.channel_profiles.update_one(
+        {"user_id": user["id"]},
+        {"$set": {"auto_profile": current, "updated_at": current["edited_at"]}},
+    )
+    return {"ok": True, "auto_profile": current}
+
+
 @api.post("/profile/channel/analyze")
-async def analyze_channel(user=Depends(get_current_user)):
-    """Auto-analyze the saved channel URL: fetch last 10 videos, ask LLM to build a style profile."""
+async def analyze_channel(force: bool = False, user=Depends(get_current_user)):
+    """Auto-analyze the saved channel URL. Cached for 24h unless force=true."""
     prof = await get_channel_profile(user["id"])
     if not prof or not prof.get("url"):
         raise HTTPException(400, "Önce kanal URL'sini kaydet")
+
+    # P2b: 24h cache
+    existing = prof.get("auto_profile") or {}
+    if not force and existing.get("analyzed_at"):
+        try:
+            ts = datetime.fromisoformat(existing["analyzed_at"])
+            if (datetime.now(timezone.utc) - ts) < timedelta(hours=24):
+                return {"ok": True, "auto_profile": existing, "videos": [], "meta": prof.get("meta"), "cached": True}
+        except Exception:
+            pass
 
     meta = prof.get("meta") or await fetch_channel_page(prof["url"])
     channel_id = meta.get("channel_id", "")
