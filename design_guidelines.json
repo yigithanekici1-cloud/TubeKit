@@ -1,0 +1,101 @@
+{
+  "theme": "Dark",
+  "archetype": "Archetype 4: Swiss & High-Contrast (Adapted for Pro Creator Tools)",
+  "vibe": "Professional, functional, high-end video editing software feel, brutalist clarity",
+  "typography": {
+    "headings": {
+      "fontFamily": "'Cabinet Grotesk', sans-serif",
+      "weights": ["800", "900"],
+      "tracking": "tracking-tight",
+      "description": "Used for page titles, big numbers, and aggressive CTAs. Creates tension and authority."
+    },
+    "body": {
+      "fontFamily": "'IBM Plex Sans', sans-serif",
+      "weights": ["400", "500", "600"],
+      "description": "Clean, highly legible body text for dense dashboard data and SEO inputs."
+    },
+    "mono": {
+      "fontFamily": "'IBM Plex Mono', monospace",
+      "weights": ["400", "500"],
+      "description": "Used for timestamps, tags, character counts, and SEO metadata."
+    },
+    "font_imports": [
+      "@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');",
+      "@import url('https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,900&display=swap');"
+    ]
+  },
+  "colors": {
+    "background": "#09090B",
+    "surface": "#18181B",
+    "border": "#27272A",
+    "text_primary": "#FAFAFA",
+    "text_secondary": "#A1A1AA",
+    "accent_primary": "#FF3B30",
+    "accent_hover": "#D62828",
+    "success": "#10B981",
+    "warning": "#F59E0B"
+  },
+  "spacing_and_layout": {
+    "page_padding": "p-8 md:p-12",
+    "widget_padding": "p-6",
+    "border_radius": "rounded-sm",
+    "border_style": "border border-zinc-800",
+    "shadows": "None. Rely on 1px borders for definition to maintain the flat, pro-tool aesthetic.",
+    "grid_system": "Bento grids with tight gaps (gap-4 or gap-6). Use exact span ratios for dashboard summaries."
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#FF3B30] text-white font-medium rounded-sm px-6 py-2 hover:bg-[#D62828] transition-colors",
+      "secondary": "bg-transparent border border-zinc-700 text-zinc-100 hover:bg-zinc-800 rounded-sm px-6 py-2 transition-colors",
+      "ghost": "bg-transparent text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50 rounded-sm px-4 py-2 transition-colors"
+    },
+    "inputs": {
+      "style": "bg-zinc-900 border border-zinc-800 text-zinc-100 rounded-sm px-4 py-2 focus:ring-1 focus:ring-[#FF3B30] focus:border-[#FF3B30] focus:outline-none transition-all placeholder:text-zinc-600"
+    },
+    "cards": {
+      "style": "bg-zinc-900/50 border border-zinc-800 rounded-sm p-6"
+    },
+    "sidebar": {
+      "style": "w-64 bg-[#09090B] border-r border-zinc-800 h-screen fixed left-0 top-0 flex flex-col p-4",
+      "links": "flex items-center gap-3 px-3 py-2 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50 transition-colors"
+    },
+    "canvas_editor": {
+      "container": "bg-black border border-zinc-800 rounded-sm overflow-hidden relative aspect-video flex items-center justify-center",
+      "toolbar": "bg-zinc-900 border border-zinc-800 rounded-sm p-2 flex gap-2"
+    }
+  },
+  "icons_library": "lucide-react",
+  "motion": {
+    "hover": "Fast and snappy: transition-all duration-150 ease-out",
+    "page_load": "Subtle fade and slide up: animate-in fade-in slide-in-from-bottom-4 duration-500"
+  },
+  "testing": {
+    "data_testid_rules": "All interactive elements (buttons, inputs, language toggles, canvas tools, history items) MUST have a descriptive kebab-case data-testid attribute. Example: data-testid='generate-thumbnail-btn'."
+  },
+  "pages_and_views": {
+    "auth": "Split screen: Left side dark aesthetic image overlay, right side stark minimalist login/register form with bold Cabinet Grotesk headings.",
+    "dashboard": "Overview of recent generations. 3-column Bento grid. Activity feed, quick action buttons to start a new SEO draft or thumbnail.",
+    "thumbnail_studio": "Pro editor layout. Left sidebar for tools (Upload, Text, Effects, AI Prompt). Center is the 16:9 Canvas. Right sidebar for layers/history. Language toggle top right.",
+    "seo_writer": "Split pane layout. Left side input (Video Topic, Keywords, Target Audience). Right side output (Title ideas in primary language + English/Turkish translation, Description with timestamps).",
+    "idea_generator": "Masonry or Grid layout of generated ideas. Each card acts as a starting point, with a button 'Create Thumbnail for this Idea'."
+  },
+  "media": {
+    "auth_hero": {
+      "url": "https://images.pexels.com/photos/10854603/pexels-photo-10854603.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Close-up view of microphone and ring light in a professional recording studio, used for auth page split screen."
+    },
+    "empty_state_dashboard": {
+      "url": "https://images.unsplash.com/photo-1610716632061-f76783ec35c9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NjV8MHwxfHNlYXJjaHwyfHxwb2RjYXN0JTIwc3R1ZGlvJTIwZGFya3xlbnwwfHx8fDE3ODE2MDMwMzR8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Man in dark studio editing, to be used as subtle background texture or empty state visual."
+    }
+  },
+  "instructions_to_main_agent": [
+    "Use standard Javascript (.js) and JSX. Do not use TypeScript (.tsx).",
+    "Implement the layout with pure Tailwind CSS and raw HTML tags inside React components. Avoid overly abstracted Shadcn wrapper components for the main layout to ensure the raw, brutalist 'pro-tool' grid structure.",
+    "Ensure all input fields and buttons have `data-testid` attributes.",
+    "Implement a global state (e.g., Context API) for the Language Toggle (TR / EN) and reflect it across all tools.",
+    "For the Thumbnail Canvas, use HTML5 `<canvas>` API or a library like `fabric.js` (if appropriate, or just basic DOM-based absolute positioning over a 16:9 div) to allow text overlays, image uploading, and downloading as PNG.",
+    "Maintain strict color discipline. Do not introduce purples, teals, or gradients. Stick to the Zinc (neutral) scale and the #FF3B30 accent color.",
+    "The app must function as a mini-SaaS dashboard, complete with sidebar navigation spanning across Auth, Dashboard, Thumbnail Editor, SEO Writer, and Idea Generator."
+  ]
+}
