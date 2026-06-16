@@ -212,22 +212,52 @@ async def fetch_youtube_info(url: str) -> Optional[dict]:
 
 
 async def fetch_channel_page(url: str) -> dict:
-    """Scrape a YouTube channel page for basic meta (title + description)."""
-    out = {"url": url, "title": "", "description": ""}
+    """Scrape a YouTube channel page for basic meta + channel_id."""
+    out = {"url": url, "title": "", "description": "", "channel_id": ""}
     try:
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as c:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as c:
             r = await c.get(url)
             if r.status_code == 200:
                 html = r.text
                 m1 = re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html)
                 m2 = re.search(r'<meta\s+(?:property="og:description"|name="description")\s+content="([^"]+)"', html)
+                m3 = re.search(r'"channelId":"(UC[\w-]{20,})"', html) or re.search(r'<meta\s+itemprop="(?:channelId|identifier)"\s+content="(UC[\w-]{20,})"', html)
                 if m1:
                     out["title"] = m1.group(1)
                 if m2:
                     out["description"] = m2.group(1)
+                if m3:
+                    out["channel_id"] = m3.group(1)
     except Exception:
         logger.exception("channel page scrape failed for %s", url)
     return out
+
+
+async def fetch_channel_recent_videos(channel_id: str, limit: int = 10) -> List[dict]:
+    """Fetch recent videos via YouTube RSS feed (no API key required)."""
+    items: List[dict] = []
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as c:
+            r = await c.get(f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}")
+            if r.status_code == 200:
+                xml = r.text
+                # entries: extract title + media:thumbnail url + published
+                entries = re.findall(
+                    r"<entry>(.*?)</entry>", xml, re.S
+                )
+                for e in entries[:limit]:
+                    t = re.search(r"<title>([^<]+)</title>", e)
+                    thumb = re.search(r'<media:thumbnail\s+url="([^"]+)"', e)
+                    pub = re.search(r"<published>([^<]+)</published>", e)
+                    if t:
+                        items.append({
+                            "title": t.group(1),
+                            "thumbnail": thumb.group(1) if thumb else "",
+                            "published": pub.group(1) if pub else "",
+                        })
+    except Exception:
+        logger.exception("rss feed failed for %s", channel_id)
+    return items
 
 
 def _channel_context_block(profile: Optional[dict]) -> str:
@@ -241,6 +271,20 @@ def _channel_context_block(profile: Optional[dict]) -> str:
         parts.append(f"Channel name: {meta['title']}")
     if meta.get("description"):
         parts.append(f"Channel public description: {meta['description']}")
+    auto = profile.get("auto_profile") or {}
+    if auto:
+        if auto.get("tone"):
+            parts.append(f"Detected tone: {auto['tone']}")
+        if auto.get("audience"):
+            parts.append(f"Detected audience: {auto['audience']}")
+        if auto.get("themes"):
+            parts.append(f"Recurring themes: {', '.join(auto['themes'])}")
+        if auto.get("title_pattern"):
+            parts.append(f"Common title pattern: {auto['title_pattern']}")
+        if auto.get("color_palette"):
+            parts.append(f"Thumbnail color palette hint: {auto['color_palette']}")
+        if auto.get("recent_titles"):
+            parts.append("Recent video titles for reference:\n - " + "\n - ".join(auto["recent_titles"][:10]))
     if profile.get("url"):
         parts.append(f"Channel URL: {profile['url']}")
     if not parts:
@@ -260,11 +304,12 @@ async def get_channel_profile(user_id: str) -> Optional[dict]:
 async def get_profile(user=Depends(get_current_user)):
     prof = await get_channel_profile(user["id"])
     if not prof:
-        return {"description": "", "url": "", "meta": None}
+        return {"description": "", "url": "", "meta": None, "auto_profile": None}
     return {
         "description": prof.get("description", ""),
         "url": prof.get("url", ""),
         "meta": prof.get("meta"),
+        "auto_profile": prof.get("auto_profile"),
         "updated_at": prof.get("updated_at"),
     }
 
@@ -287,6 +332,67 @@ async def save_profile(data: ChannelProfileIn, user=Depends(get_current_user)):
         upsert=True,
     )
     return {"ok": True, "meta": meta}
+
+
+@api.post("/profile/channel/analyze")
+async def analyze_channel(user=Depends(get_current_user)):
+    """Auto-analyze the saved channel URL: fetch last 10 videos, ask LLM to build a style profile."""
+    prof = await get_channel_profile(user["id"])
+    if not prof or not prof.get("url"):
+        raise HTTPException(400, "Önce kanal URL'sini kaydet")
+
+    meta = prof.get("meta") or await fetch_channel_page(prof["url"])
+    channel_id = meta.get("channel_id", "")
+    if not channel_id:
+        raise HTTPException(400, "Kanal kimliği bulunamadı (URL geçerli bir YouTube kanal sayfası olmalı)")
+
+    videos = await fetch_channel_recent_videos(channel_id, limit=10)
+    if not videos:
+        raise HTTPException(400, "Bu kanal için son videolar alınamadı")
+
+    titles = [v["title"] for v in videos]
+
+    system = "You are a YouTube channel brand strategist. Respond ONLY with valid JSON."
+    prompt = f"""Analyze this YouTube channel based on its public info and the titles of its 10 most recent videos.
+
+Channel name: {meta.get('title','')}
+Public description: {meta.get('description','')}
+
+Recent video titles:
+{chr(10).join('- ' + t for t in titles)}
+
+Return ONLY this JSON shape (no markdown):
+{{
+  "tone": "one short phrase, e.g. 'energetic and humorous'",
+  "audience": "one short phrase describing the target viewer",
+  "themes": ["theme1", "theme2", "theme3", "theme4"],
+  "title_pattern": "the recurring formula you see in the titles, in one sentence",
+  "color_palette": "short hint for thumbnail colors, e.g. 'high-contrast red + black, bold yellow accent'",
+  "summary": "2-sentence summary of what makes this channel unique"
+}}
+Use the channel's likely native language (infer from titles)."""
+
+    chat = _new_chat(f"channel-{uuid.uuid4()}", system)
+    try:
+        resp = await chat.send_message(UserMessage(text=prompt))
+    except Exception as e:
+        logger.exception("channel analyze failed")
+        raise HTTPException(500, f"Analiz başarısız: {str(e)[:120]}")
+    parsed = _extract_json(resp) or {}
+    parsed["recent_titles"] = titles
+    parsed["analyzed_at"] = datetime.now(timezone.utc).isoformat()
+
+    await db.channel_profiles.update_one(
+        {"user_id": user["id"]},
+        {"$set": {"meta": meta, "auto_profile": parsed, "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+
+    return {
+        "ok": True,
+        "auto_profile": parsed,
+        "videos": videos,
+        "meta": meta,
+    }
 
 
 # ---------------- SEO Routes ----------------
