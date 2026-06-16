@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 const LangCtx = createContext(null);
 
@@ -89,8 +89,9 @@ export function LanguageProvider({ children }) {
   const [lang, setLang] = useState(() => localStorage.getItem("tk_lang") || "tr");
   useEffect(() => { localStorage.setItem("tk_lang", lang); }, [lang]);
   const t = (k) => dict[lang][k] || k;
+  const value = useMemo(() => ({ lang, setLang, t }), [lang]);
   return (
-    <LangCtx.Provider value={{ lang, setLang, t }}>
+    <LangCtx.Provider value={value}>
       {children}
     </LangCtx.Provider>
   );

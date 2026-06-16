@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
 
 const AuthCtx = createContext(null);
@@ -45,7 +45,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthCtx.Provider value={{ user, loading, login, register, logout }}>
+    <AuthCtx.Provider value={useMemo(() => ({ user, loading, login, register, logout }), [user, loading])}>
       {children}
     </AuthCtx.Provider>
   );
