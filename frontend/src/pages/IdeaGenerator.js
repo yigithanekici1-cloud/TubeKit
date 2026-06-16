@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, Lightbulb, ArrowRight, TrendingUp } from "lucide-react";
+import { Loader2, Lightbulb, ArrowRight, TrendingUp, Link2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import api, { formatApiError } from "@/lib/api";
 import { useLang } from "@/contexts/LanguageContext";
@@ -12,21 +12,35 @@ export default function IdeaGenerator() {
   const [count, setCount] = useState(6);
   const [loading, setLoading] = useState(false);
   const [ideas, setIdeas] = useState([]);
+  const [refUrls, setRefUrls] = useState([""]);
+  const [refsMeta, setRefsMeta] = useState([]);
+  const [showRefs, setShowRefs] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
     if (!niche.trim()) return;
     setLoading(true);
     setIdeas([]);
+    setRefsMeta([]);
     try {
-      const { data } = await api.post("/ideas/generate", { niche, count, language: lang });
+      const urls = refUrls.map((u) => u.trim()).filter(Boolean);
+      const { data } = await api.post("/ideas/generate", { niche, count, language: lang, reference_urls: urls });
       setIdeas(data.ideas || []);
+      setRefsMeta(data.references || []);
     } catch (e2) {
       toast.error(formatApiError(e2.response?.data?.detail) || e2.message);
     } finally {
       setLoading(false);
     }
   };
+
+  const setRefUrl = (i, v) => {
+    const copy = [...refUrls];
+    copy[i] = v;
+    setRefUrls(copy);
+  };
+  const addRef = () => refUrls.length < 3 && setRefUrls([...refUrls, ""]);
+  const removeRef = (i) => setRefUrls(refUrls.filter((_, idx) => idx !== i));
 
   const handleUseIdea = (idea) => {
     sessionStorage.setItem("tk_seed_prompt", idea.hook || idea.title);
@@ -46,29 +60,96 @@ export default function IdeaGenerator() {
         </p>
       </div>
 
-      <form onSubmit={submit} className="tk-card p-6 mb-6 grid md:grid-cols-[1fr_140px_auto] gap-3 items-end" data-testid="ideas-form">
-        <div>
-          <label className="font-mono text-xs text-zinc-500 mb-2 block">{t("niche").toUpperCase()}</label>
-          <input
-            value={niche}
-            onChange={(e) => setNiche(e.target.value)}
-            placeholder={lang === "tr" ? "Örn: oyun, yemek, finans, vlog" : "e.g. gaming, food, finance, vlog"}
-            className="tk-input"
-            data-testid="ideas-niche-input"
-            required
-          />
+      <form onSubmit={submit} className="tk-card p-6 mb-6 space-y-4" data-testid="ideas-form">
+        <div className="grid md:grid-cols-[1fr_140px_auto] gap-3 items-end">
+          <div>
+            <label className="font-mono text-xs text-zinc-500 mb-2 block">{t("niche").toUpperCase()}</label>
+            <input
+              value={niche}
+              onChange={(e) => setNiche(e.target.value)}
+              placeholder={lang === "tr" ? "Örn: oyun, yemek, finans, vlog" : "e.g. gaming, food, finance, vlog"}
+              className="tk-input"
+              data-testid="ideas-niche-input"
+              required
+            />
+          </div>
+          <div>
+            <label className="font-mono text-xs text-zinc-500 mb-2 block">COUNT</label>
+            <select value={count} onChange={(e) => setCount(+e.target.value)} className="tk-input" data-testid="ideas-count-select">
+              {[3, 5, 6, 8, 10].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+          <button type="submit" disabled={loading} className="tk-btn-primary" data-testid="ideas-generate-btn">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lightbulb className="w-4 h-4" />}
+            {loading ? t("generating") : t("generate")}
+          </button>
         </div>
-        <div>
-          <label className="font-mono text-xs text-zinc-500 mb-2 block">COUNT</label>
-          <select value={count} onChange={(e) => setCount(+e.target.value)} className="tk-input" data-testid="ideas-count-select">
-            {[3, 5, 6, 8, 10].map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
+
+        <div className="border-t border-zinc-800 pt-4">
+          <button
+            type="button"
+            onClick={() => setShowRefs(!showRefs)}
+            className="text-xs font-mono text-zinc-400 hover:text-white inline-flex items-center gap-2"
+            data-testid="ideas-toggle-refs-btn"
+          >
+            <Link2 className="w-3.5 h-3.5" />
+            {lang === "tr" ? "+ REFERANS YOUTUBE LİNKİ EKLE (OPSİYONEL)" : "+ ADD REFERENCE YOUTUBE LINKS (OPTIONAL)"}
+          </button>
+
+          {showRefs && (
+            <div className="mt-3 space-y-2" data-testid="ideas-refs-block">
+              <p className="text-xs text-zinc-500 max-w-2xl">
+                {lang === "tr"
+                  ? "3'e kadar YouTube video linki ekle. AI bu videoların başlık ve formatlarını analiz edip benzer ruhta fikirler üretir."
+                  : "Add up to 3 YouTube video links. AI will analyze their titles & formats and generate similar-style ideas."}
+              </p>
+              {refUrls.map((u, i) => (
+                <div key={i} className="flex gap-2">
+                  <input
+                    value={u}
+                    onChange={(e) => setRefUrl(i, e.target.value)}
+                    placeholder="https://youtube.com/watch?v=..."
+                    className="tk-input font-mono text-sm"
+                    data-testid={`ideas-ref-url-${i}`}
+                  />
+                  {refUrls.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeRef(i)}
+                      className="tk-btn-secondary px-3"
+                      data-testid={`ideas-ref-remove-${i}`}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+              {refUrls.length < 3 && (
+                <button type="button" onClick={addRef} className="text-xs font-mono text-[#FF3B30] hover:underline" data-testid="ideas-ref-add-btn">
+                  + {lang === "tr" ? "BİR LİNK DAHA" : "ADD ANOTHER"}
+                </button>
+              )}
+            </div>
+          )}
         </div>
-        <button type="submit" disabled={loading} className="tk-btn-primary" data-testid="ideas-generate-btn">
-          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lightbulb className="w-4 h-4" />}
-          {loading ? t("generating") : t("generate")}
-        </button>
       </form>
+
+      {refsMeta.length > 0 && (
+        <div className="tk-card p-4 mb-4" data-testid="ideas-refs-analyzed">
+          <div className="font-mono text-xs text-zinc-500 mb-3">{lang === "tr" ? "ANALİZ EDİLEN VİDEOLAR" : "ANALYZED VIDEOS"}</div>
+          <div className="grid md:grid-cols-3 gap-3">
+            {refsMeta.map((r, i) => (
+              <a key={i} href={r.url} target="_blank" rel="noreferrer" className="flex gap-3 items-start group">
+                {r.thumbnail && <img src={r.thumbnail} alt="" className="w-20 aspect-video object-cover border border-zinc-800 rounded-sm" />}
+                <div className="min-w-0">
+                  <div className="text-sm text-zinc-100 group-hover:text-[#FF3B30] line-clamp-2">{r.title}</div>
+                  <div className="font-mono text-xs text-zinc-500 mt-1">{r.author}</div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading && (
         <div className="tk-card p-12 flex flex-col items-center text-zinc-500">

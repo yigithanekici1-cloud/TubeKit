@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, Upload, Type, Download, Save, Loader2, Wand2, Image as ImageIcon, Trash2 } from "lucide-react";
+import { Sparkles, Upload, Type, Download, Save, Loader2, Wand2, Image as ImageIcon, Trash2, X } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
 import { useLang } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
@@ -49,10 +49,29 @@ function AIPanel() {
   const [loading, setLoading] = useState(false);
   const [image, setImage] = useState(null);
   const [history, setHistory] = useState([]);
+  const [refImages, setRefImages] = useState([]); // array of data URLs, max 3
+  const refFileInput = useRef(null);
 
   useEffect(() => {
     api.get("/thumbnail/list").then((r) => setHistory(r.data.items)).catch(() => {});
   }, []);
+
+  const onUploadRef = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const slots = 3 - refImages.length;
+    const accepted = files.slice(0, slots);
+    Promise.all(accepted.map((f) => new Promise((res) => {
+      const r = new FileReader();
+      r.onload = (ev) => res(ev.target.result);
+      r.readAsDataURL(f);
+    }))).then((urls) => {
+      setRefImages((prev) => [...prev, ...urls].slice(0, 3));
+    });
+    e.target.value = "";
+  };
+
+  const removeRef = (i) => setRefImages(refImages.filter((_, idx) => idx !== i));
 
   const generate = async () => {
     if (!prompt.trim()) {
@@ -64,6 +83,7 @@ function AIPanel() {
     try {
       const { data } = await api.post("/thumbnail/generate", {
         prompt, title_text: title, style, language: lang,
+        reference_images: refImages,
       });
       setImage(data.image);
       const hist = await api.get("/thumbnail/list");
@@ -87,6 +107,60 @@ function AIPanel() {
   return (
     <div className="grid lg:grid-cols-[1fr_360px] gap-4">
       <div className="tk-card p-6">
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-mono text-xs text-zinc-500">
+            {lang === "tr" ? `REFERANS FOTOĞRAFLAR (OPSİYONEL · ${refImages.length}/3)` : `REFERENCE PHOTOS (OPTIONAL · ${refImages.length}/3)`}
+          </div>
+          {refImages.length > 0 && (
+            <button
+              onClick={() => setRefImages([])}
+              data-testid="ai-ref-clear-btn"
+              className="text-xs font-mono text-zinc-500 hover:text-[#FF3B30] inline-flex items-center gap-1"
+            >
+              <Trash2 className="w-3 h-3" /> {lang === "tr" ? "Tümünü Kaldır" : "Clear all"}
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-zinc-500 mb-3">
+          {lang === "tr"
+            ? "3'e kadar fotoğraf yükle. AI hepsinden ilham alarak (kişi, sahne, renkler) yeni bir thumbnail üretir."
+            : "Upload up to 3 photos. AI will remix elements (subject, scene, palette) from ALL of them into one new thumbnail."}
+        </p>
+        <input
+          ref={refFileInput}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={onUploadRef}
+          className="hidden"
+          data-testid="ai-ref-upload-input"
+        />
+
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          {refImages.map((src, i) => (
+            <div key={i} className="aspect-video bg-black border border-zinc-800 rounded-sm overflow-hidden relative group" data-testid={`ai-ref-slot-${i}`}>
+              <img src={src} alt={`ref-${i}`} className="w-full h-full object-cover" />
+              <button
+                onClick={() => removeRef(i)}
+                data-testid={`ai-ref-remove-${i}`}
+                className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-[#FF3B30] rounded-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <X className="w-3.5 h-3.5 text-white" />
+              </button>
+            </div>
+          ))}
+          {refImages.length < 3 && (
+            <button
+              onClick={() => refFileInput.current?.click()}
+              data-testid="ai-ref-upload-btn"
+              className="aspect-video bg-zinc-950 border border-dashed border-zinc-800 rounded-sm text-zinc-500 hover:text-white hover:border-[#FF3B30] transition-colors flex flex-col items-center justify-center"
+            >
+              <Upload className="w-5 h-5 mb-1" />
+              <span className="font-mono text-[10px]">+ {lang === "tr" ? "EKLE" : "ADD"}</span>
+            </button>
+          )}
+        </div>
+
         <div className="font-mono text-xs text-zinc-500 mb-3">{t("aiPrompt").toUpperCase()}</div>
         <textarea
           value={prompt}
