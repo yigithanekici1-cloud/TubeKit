@@ -12,6 +12,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
+import base64
 import bcrypt
 import httpx
 import jwt
@@ -292,7 +293,15 @@ def _channel_context_block(profile: Optional[dict]) -> str:
         if auto.get("title_pattern"):
             parts.append(f"Common title pattern: {auto['title_pattern']}")
         if auto.get("color_palette"):
-            parts.append(f"Thumbnail color palette hint: {auto['color_palette']}")
+            parts.append(f"Thumbnail color palette: {auto['color_palette']}")
+        if auto.get("typography_style"):
+            parts.append(f"Thumbnail typography style: {auto['typography_style']}")
+        if auto.get("face_presence"):
+            parts.append(f"Face/person presence in thumbnails: {auto['face_presence']}")
+        if auto.get("composition_pattern"):
+            parts.append(f"Recurring thumbnail composition: {auto['composition_pattern']}")
+        if auto.get("visual_summary"):
+            parts.append(f"Visual style summary: {auto['visual_summary']}")
         if auto.get("recent_titles"):
             parts.append("Recent video titles for reference:\n - " + "\n - ".join(auto["recent_titles"][:10]))
     if profile.get("url"):
@@ -391,34 +400,65 @@ async def analyze_channel(force: bool = False, user=Depends(get_current_user)):
 
     titles = [v["title"] for v in videos]
 
-    system = "You are a YouTube channel brand strategist. Respond ONLY with valid JSON."
-    prompt = f"""Analyze this YouTube channel based on its public info and the titles of its 10 most recent videos.
+    # Download thumbnails in parallel for multimodal analysis
+    thumb_b64_list: List[str] = []
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as c:
+        for v in videos:
+            if not v.get("thumbnail"):
+                continue
+            try:
+                r = await c.get(v["thumbnail"])
+                if r.status_code == 200 and len(r.content) < 800_000:
+                    thumb_b64_list.append(base64.b64encode(r.content).decode())
+            except Exception:
+                pass
+            if len(thumb_b64_list) >= 10:
+                break
+
+    system = "You are a YouTube channel brand strategist with deep visual design expertise. Respond ONLY with valid JSON."
+    visual_section = ""
+    if thumb_b64_list:
+        visual_section = (
+            f"\n\nAlso attached are {len(thumb_b64_list)} thumbnail images from this channel's recent videos. "
+            "Analyze the VISUAL fingerprint across them: dominant colors, typography style, "
+            "whether faces/people are typically present, composition patterns, and any recurring graphic elements."
+        )
+    prompt = f"""Analyze this YouTube channel.
 
 Channel name: {meta.get('title','')}
 Public description: {meta.get('description','')}
 
 Recent video titles:
-{chr(10).join('- ' + t for t in titles)}
+{chr(10).join('- ' + t for t in titles)}{visual_section}
 
 Return ONLY this JSON shape (no markdown):
 {{
-  "tone": "one short phrase, e.g. 'energetic and humorous'",
-  "audience": "one short phrase describing the target viewer",
-  "themes": ["theme1", "theme2", "theme3", "theme4"],
-  "title_pattern": "the recurring formula you see in the titles, in one sentence",
-  "color_palette": "short hint for thumbnail colors, e.g. 'high-contrast red + black, bold yellow accent'",
-  "summary": "2-sentence summary of what makes this channel unique"
+  "tone": "one short phrase",
+  "audience": "one short phrase",
+  "themes": ["theme1","theme2","theme3","theme4"],
+  "title_pattern": "the recurring formula in one sentence",
+  "color_palette": "specific dominant colors from the actual thumbnails (e.g. 'deep navy + neon orange accents, white text')",
+  "typography_style": "describe the text style on thumbnails (e.g. 'bold sans-serif, all caps, heavy outline')",
+  "face_presence": "always | usually | sometimes | rarely | never",
+  "composition_pattern": "describe recurring layout (e.g. 'subject on right, big title left, product object center')",
+  "visual_summary": "1-sentence visual style summary that a designer could replicate",
+  "summary": "2-sentence overall channel summary"
 }}
-Use the channel's likely native language (infer from titles)."""
+Use the channel's likely native language for text fields."""
+
+    chat_kwargs = {"text": prompt}
+    if thumb_b64_list:
+        chat_kwargs["file_contents"] = [ImageContent(b) for b in thumb_b64_list]
 
     chat = _new_chat(f"channel-{uuid.uuid4()}", system)
     try:
-        resp = await chat.send_message(UserMessage(text=prompt))
+        resp = await chat.send_message(UserMessage(**chat_kwargs))
     except Exception as e:
         logger.exception("channel analyze failed")
         raise HTTPException(500, f"Analiz başarısız: {str(e)[:120]}")
     parsed = _extract_json(resp) or {}
     parsed["recent_titles"] = titles
+    parsed["thumbnails_analyzed"] = len(thumb_b64_list)
     parsed["analyzed_at"] = datetime.now(timezone.utc).isoformat()
 
     await db.channel_profiles.update_one(
@@ -568,9 +608,26 @@ async def thumbnail_generate(data: ThumbnailRequest, user=Depends(get_current_us
     if data.use_channel_context:
         prof = await get_channel_profile(user["id"])
         if prof:
-            desc = prof.get("description") or ((prof.get("meta") or {}).get("description") or "")
-            if desc:
-                channel_hint = f" The thumbnail must visually match this creator's existing brand/tone: {desc[:300]}."
+            auto = prof.get("auto_profile") or {}
+            visual_bits = []
+            if auto.get("visual_summary"):
+                visual_bits.append(auto["visual_summary"])
+            if auto.get("color_palette"):
+                visual_bits.append(f"Use colors: {auto['color_palette']}")
+            if auto.get("typography_style"):
+                visual_bits.append(f"Title typography: {auto['typography_style']}")
+            if auto.get("face_presence") in ("always", "usually"):
+                visual_bits.append("Include a face/person prominently — it's a recurring element of this channel")
+            elif auto.get("face_presence") == "never":
+                visual_bits.append("Do NOT include a face/person — this channel never uses people in thumbnails")
+            if auto.get("composition_pattern"):
+                visual_bits.append(f"Composition: {auto['composition_pattern']}")
+            if visual_bits:
+                channel_hint = " The thumbnail must match this creator's visual brand: " + " | ".join(visual_bits) + "."
+            else:
+                desc = prof.get("description") or ((prof.get("meta") or {}).get("description") or "")
+                if desc:
+                    channel_hint = f" Match this creator's brand: {desc[:300]}."
 
     # Collect refs from either new multi field or legacy single field
     refs_raw: List[str] = []

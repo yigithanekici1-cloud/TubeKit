@@ -195,6 +195,11 @@ export default function ChannelProfileCard() {
               </button>
             </div>
           )}
+          {profile.auto_profile?.thumbnails_analyzed > 0 && (
+            <div className="text-xs font-mono text-zinc-500" data-testid="channel-thumbs-analyzed">
+              {lang === "tr" ? "GÖRSEL ANALİZİ" : "VISUAL ANALYSIS"}: <span className="text-[#10B981]">{profile.auto_profile.thumbnails_analyzed}</span> thumbnail
+            </div>
+          )}
           {profile.meta?.title && (
             <div className="text-xs font-mono text-zinc-500">
               {lang === "tr" ? "TESPİT EDİLEN" : "DETECTED"}: <span className="text-zinc-300">{profile.meta.title}</span>
@@ -318,6 +323,10 @@ function AutoProfileView({ data, editing, lang, onSave }) {
         {data.audience && <AutoField icon={Users} label={lang === "tr" ? "Kitle" : "Audience"} value={data.audience} />}
         {data.title_pattern && <AutoField icon={Hash} label={lang === "tr" ? "Başlık Formülü" : "Title Pattern"} value={data.title_pattern} />}
         {data.color_palette && <AutoField icon={Palette} label={lang === "tr" ? "Renk Paleti" : "Color Palette"} value={data.color_palette} />}
+        {data.typography_style && <AutoField icon={Type} label={lang === "tr" ? "Tipografi" : "Typography"} value={data.typography_style} />}
+        {data.face_presence && <AutoField icon={Users} label={lang === "tr" ? "Yüz Kullanımı" : "Face Presence"} value={data.face_presence} />}
+        {data.composition_pattern && <AutoField icon={Hash} label={lang === "tr" ? "Kompozisyon" : "Composition"} value={data.composition_pattern} />}
+        {data.visual_summary && <AutoField icon={Palette} label={lang === "tr" ? "Görsel Özet" : "Visual Summary"} value={data.visual_summary} />}
       </div>
       {data.themes?.length > 0 && (
         <div className="mt-3">
