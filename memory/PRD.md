@@ -37,13 +37,20 @@ A creator-tool mini-app for YouTubers: AI thumbnail design + canvas editor, SEO 
 - [x] Sidebar layout with TR/EN toggle + logout
 - [x] Sonner toast notifications
 - [x] Test coverage: 19/19 backend + frontend e2e (iteration_1.json)
+- [x] **2026-02-17** — Thumbnail Studio split refs: 1 person photo (`person_image`) + up to 4 scene/background photos (`scene_images`). Backend prompt now includes strict directive: "preserve face and body exactly, do not alter facial features or body proportions". Legacy `reference_image(s)` still supported.
+- [x] **2026-02-17** — `DELETE /api/thumbnail/{id}` with owner-only check (400 invalid id, 403 non-owner, 404 not found). Trash icon shown on hover in Studio history sidebar with confirm + optimistic refresh.
+- [x] **2026-02-17** — Mobile responsiveness: sidebar → hamburger drawer with backdrop on `<lg`. Dashboard / Studio / SEO / Ideas grids collapse to single column; form elements full-width; page padding reduced to `p-4` on mobile.
+- [x] **2026-02-17** — Test coverage: 28/28 backend pytest passing (iteration_2.json) incl. 9 new tests for delete ownership + new generate fields.
 
 ## Backlog / Next Tasks
-- **P1** — Persist Idea→Studio seed (use `tk_seed_prompt` from sessionStorage in Studio AI panel)
+- **P1** — Frontend Playwright pass for mobile hamburger + history-delete-{id} trash flow (not covered in iteration_2)
+- **P1** — Persist Idea→Studio seed (already wired, verify on mobile)
 - **P1** — Inline regenerate-single-title button in SEO Writer
+- **P2** — Refactor `server.py` (896 LOC) into `/app/backend/routers/{auth,seo,ideas,thumbnail,channel,dashboard}.py`
+- **P2** — Size/MIME validation on uploaded base64 `person_image`/`scene_images` before forwarding to LLM
 - **P2** — Thumbnail variants (3 in one go) + A/B compare
 - **P2** — Drag-to-position text on canvas (currently sliders only)
 - **P2** — YouTube channel URL import → auto-detect niche
 - **P3** — Password reset flow & rate limiting on /auth/login
-- **P3** — Per-thumbnail delete + share link
+- **P3** — Per-thumbnail share link
 - **P3** — Stripe billing tier (free 10/mo → pro unlimited)
