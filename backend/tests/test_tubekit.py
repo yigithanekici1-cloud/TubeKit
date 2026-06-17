@@ -5,7 +5,7 @@ import uuid
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://seo-thumbnail-pro.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://tubekit-studio.preview.emergentagent.com").rstrip("/")
 ADMIN_EMAIL = "admin@tubekit.app"
 ADMIN_PASSWORD = "admin123"
 

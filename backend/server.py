@@ -121,6 +121,8 @@ class ThumbnailRequest(BaseModel):
     language: str = "tr"
     reference_image: Optional[str] = None
     reference_images: Optional[List[str]] = None
+    person_image: Optional[str] = None  # 1 person photo (face/body preserved)
+    scene_images: Optional[List[str]] = None  # up to 4 scene/background refs
     use_channel_context: Optional[bool] = False
 
 
