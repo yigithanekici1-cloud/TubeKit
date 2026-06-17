@@ -51,13 +51,13 @@ export default function SEOWriter() {
     : ["", "Casual", "Energetic", "Educational", "Dramatic", "Humorous", "Professional"];
 
   return (
-    <div className="p-8 md:p-12 max-w-7xl fade-up" data-testid="seo-page">
+    <div className="p-4 sm:p-8 md:p-12 max-w-7xl fade-up" data-testid="seo-page">
       <div className="mb-8">
         <div className="font-mono text-xs text-zinc-500 mb-2">SEO</div>
-        <h1 className="font-display text-5xl">{t("seoWriter")}</h1>
+        <h1 className="font-display text-4xl sm:text-5xl">{t("seoWriter")}</h1>
       </div>
 
-      <div className="grid lg:grid-cols-[400px_1fr] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-4">
         <form onSubmit={submit} className="tk-card p-6 space-y-4" data-testid="seo-form">
           <div>
             <label className="font-mono text-xs text-zinc-500 mb-2 block">{t("topic").toUpperCase()}</label>
@@ -96,7 +96,7 @@ export default function SEOWriter() {
                 <p className="text-xs text-zinc-500">
                   {lang === "tr" ? "Bu alanlar AI'a daha keskin başlık ve açıklama üretmesi için yardımcı olur." : "These fields help AI craft sharper, more targeted output."}
                 </p>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="font-mono text-xs text-zinc-500 mb-1.5 block">{lang === "tr" ? "FORMAT" : "FORMAT"}</label>
                     <select value={videoFormat} onChange={(e) => setVideoFormat(e.target.value)} className="tk-input" data-testid="seo-format-select">

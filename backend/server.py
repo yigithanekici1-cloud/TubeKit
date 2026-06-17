@@ -631,44 +631,101 @@ async def thumbnail_generate(data: ThumbnailRequest, user=Depends(get_current_us
                 if desc:
                     channel_hint = f" Match this creator's brand: {desc[:300]}."
 
-    # Collect refs from either new multi field or legacy single field
-    refs_raw: List[str] = []
-    if data.reference_images:
-        refs_raw.extend([r for r in data.reference_images if r])
-    if data.reference_image:
-        refs_raw.append(data.reference_image)
-    refs_raw = refs_raw[:3]  # hard cap at 3
+    def _strip_data_prefix(s: str) -> str:
+        return s.split(",", 1)[-1] if s.startswith("data:") else s
 
-    # Normalize: strip data: prefix
+    # New flow: explicit person photo + scene photos (preferred)
+    person_clean: Optional[str] = None
+    if data.person_image:
+        person_clean = _strip_data_prefix(data.person_image)
+
+    scenes_clean: List[str] = []
+    if data.scene_images:
+        for s in data.scene_images:
+            if s:
+                scenes_clean.append(_strip_data_prefix(s))
+        scenes_clean = scenes_clean[:4]  # hard cap at 4 scene refs
+
+    # Legacy flow: generic reference images (kept for backward compatibility)
+    legacy_refs: List[str] = []
+    if not person_clean and not scenes_clean:
+        refs_raw: List[str] = []
+        if data.reference_images:
+            refs_raw.extend([r for r in data.reference_images if r])
+        if data.reference_image:
+            refs_raw.append(data.reference_image)
+        refs_raw = refs_raw[:3]  # hard cap at 3
+        legacy_refs = [_strip_data_prefix(r) for r in refs_raw]
+
+    # Build final ordered image list: person first, then scenes, then legacy refs
     refs_clean: List[str] = []
-    for r in refs_raw:
-        refs_clean.append(r.split(",", 1)[-1] if r.startswith("data:") else r)
+    if person_clean:
+        refs_clean.append(person_clean)
+    refs_clean.extend(scenes_clean)
+    if not refs_clean:
+        refs_clean = legacy_refs
 
-    n = len(refs_clean)
-    if n == 0:
+    preserve_directive = (
+        " CRITICAL: preserve face and body exactly, do not alter facial features or body proportions; "
+        "do not change skin tone, hair, eye color, age, gender, ethnicity, clothing details or body shape. "
+        "Only place the person into the new scene — keep the person pixel-faithful to the reference."
+    )
+
+    if person_clean and scenes_clean:
+        n_scene = len(scenes_clean)
         final_prompt = (
-            f"YouTube thumbnail, 16:9 widescreen aspect ratio, 1280x720, "
-            f"eye-catching click-worthy design. Subject: {data.prompt}. "
-            f"Style: {style_desc}. Composition: rule of thirds, expressive face if person, "
-            f"dramatic contrast, high saturation, sharp focus.{title_part}{channel_hint}"
+            f"You are given {1 + n_scene} reference images. IMAGE 1 is the PERSON. "
+            f"IMAGES 2..{1 + n_scene} are SCENE/BACKGROUND references. "
+            f"Place the EXACT person from IMAGE 1 into a new YouTube thumbnail scene composed by remixing "
+            f"the background, mood, color palette, lighting and objects from IMAGES 2..{1 + n_scene}. "
+            f"{preserve_directive} "
+            f"16:9 widescreen, 1280x720, eye-catching click-worthy design. "
+            f"Scene/context the user wants: {data.prompt}. Style: {style_desc}. "
+            f"Composition: rule of thirds, expressive face, dramatic contrast, high saturation, sharp focus.{title_part}{channel_hint}"
         )
-    elif n == 1:
+    elif person_clean:
         final_prompt = (
-            f"Use the person/subject from the provided reference image and place them in a new YouTube thumbnail composition. "
-            f"Keep the subject's face and identifying features clearly recognizable. "
+            f"Use the EXACT person from the provided reference image and place them in a new YouTube thumbnail composition. "
+            f"{preserve_directive} "
             f"16:9 widescreen, 1280x720, eye-catching click-worthy design. "
             f"Scene/context: {data.prompt}. Style: {style_desc}. "
             f"Composition: rule of thirds, expressive face, dramatic contrast, high saturation, sharp focus.{title_part}{channel_hint}"
         )
-    else:
+    elif scenes_clean:
+        n_scene = len(scenes_clean)
         final_prompt = (
-            f"You are given {n} reference images. Creatively combine and remix elements from ALL of them — "
-            f"main subject(s), background, mood, color palette, objects — into ONE new cohesive YouTube thumbnail. "
-            f"Keep faces recognizable if people are present. "
+            f"You are given {n_scene} scene/background reference images. Creatively combine and remix elements from ALL of them — "
+            f"background, mood, color palette, lighting, objects — into ONE new cohesive YouTube thumbnail. "
             f"16:9 widescreen, 1280x720, eye-catching click-worthy design. "
             f"Scene/context the user wants: {data.prompt}. Style: {style_desc}. "
             f"Composition: rule of thirds, dramatic contrast, high saturation, sharp focus.{title_part}{channel_hint}"
         )
+    else:
+        n = len(legacy_refs)
+        if n == 0:
+            final_prompt = (
+                f"YouTube thumbnail, 16:9 widescreen aspect ratio, 1280x720, "
+                f"eye-catching click-worthy design. Subject: {data.prompt}. "
+                f"Style: {style_desc}. Composition: rule of thirds, expressive face if person, "
+                f"dramatic contrast, high saturation, sharp focus.{title_part}{channel_hint}"
+            )
+        elif n == 1:
+            final_prompt = (
+                f"Use the person/subject from the provided reference image and place them in a new YouTube thumbnail composition. "
+                f"Keep the subject's face and identifying features clearly recognizable. "
+                f"16:9 widescreen, 1280x720, eye-catching click-worthy design. "
+                f"Scene/context: {data.prompt}. Style: {style_desc}. "
+                f"Composition: rule of thirds, expressive face, dramatic contrast, high saturation, sharp focus.{title_part}{channel_hint}"
+            )
+        else:
+            final_prompt = (
+                f"You are given {n} reference images. Creatively combine and remix elements from ALL of them — "
+                f"main subject(s), background, mood, color palette, objects — into ONE new cohesive YouTube thumbnail. "
+                f"Keep faces recognizable if people are present. "
+                f"16:9 widescreen, 1280x720, eye-catching click-worthy design. "
+                f"Scene/context the user wants: {data.prompt}. Style: {style_desc}. "
+                f"Composition: rule of thirds, dramatic contrast, high saturation, sharp focus.{title_part}{channel_hint}"
+            )
 
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
@@ -734,6 +791,21 @@ async def thumbnail_list(user=Depends(get_current_user)):
             "created_at": d["created_at"],
         })
     return {"items": items}
+
+
+@api.delete("/thumbnail/{thumb_id}")
+async def thumbnail_delete(thumb_id: str, user=Depends(get_current_user)):
+    try:
+        oid = ObjectId(thumb_id)
+    except Exception:
+        raise HTTPException(400, "Geçersiz id")
+    doc = await db.thumbnails.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(404, "Görsel bulunamadı")
+    if doc.get("user_id") != user["id"]:
+        raise HTTPException(403, "Bu görseli silme yetkiniz yok")
+    await db.thumbnails.delete_one({"_id": oid})
+    return {"ok": True, "id": thumb_id}
 
 
 @api.get("/history/list")

@@ -158,6 +158,203 @@ class TestThumbnail:
         assert len(d["image"]) > 500
 
 
+# ---------------- Thumbnail DELETE + new fields tests (iteration 2) ----------------
+PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+
+
+@pytest.fixture(scope="session")
+def test_user(session):
+    """Register a fresh test user; return dict with email, password, token, id, headers."""
+    email = f"test_user_{uuid.uuid4().hex[:8]}@example.com"
+    password = "pass1234"
+    r = session.post(
+        f"{BASE_URL}/api/auth/register",
+        json={"email": email, "password": password, "name": "TEST_DeleteOwner"},
+        timeout=30,
+    )
+    assert r.status_code == 200, r.text
+    d = r.json()
+    return {
+        "email": email,
+        "password": password,
+        "token": d["token"],
+        "id": d["user"]["id"],
+        "headers": {"Authorization": f"Bearer {d['token']}", "Content-Type": "application/json"},
+    }
+
+
+class TestThumbnailDelete:
+    """DELETE /api/thumbnail/{id} ownership + validation"""
+
+    def test_delete_unauth_returns_401(self, session):
+        # Any valid-shaped ObjectId, but unauth must short-circuit before resolving
+        r = session.delete(f"{BASE_URL}/api/thumbnail/507f1f77bcf86cd799439011", timeout=30)
+        assert r.status_code == 401, r.text
+
+    def test_delete_invalid_id_returns_400(self, session, auth_headers):
+        r = session.delete(f"{BASE_URL}/api/thumbnail/abc", headers=auth_headers, timeout=30)
+        assert r.status_code == 400, r.text
+        body = r.json()
+        msg = body.get("detail") or body.get("message") or ""
+        assert "Geçersiz id" in msg, f"Unexpected error body: {body}"
+
+    def test_delete_nonexistent_id_returns_404(self, session, auth_headers):
+        # Valid ObjectId shape but not present in DB
+        r = session.delete(
+            f"{BASE_URL}/api/thumbnail/507f1f77bcf86cd799439011",
+            headers=auth_headers,
+            timeout=30,
+        )
+        assert r.status_code == 404, r.text
+        body = r.json()
+        msg = body.get("detail") or body.get("message") or ""
+        assert "Görsel bulunamadı" in msg, f"Unexpected error body: {body}"
+
+    def test_owner_can_delete_and_listing_reflects(self, session, test_user):
+        h = test_user["headers"]
+        # Create
+        r_save = session.post(
+            f"{BASE_URL}/api/thumbnail/save",
+            headers=h,
+            json={
+                "image_data": f"data:image/png;base64,{PNG_B64}",
+                "title": "TEST_owner_delete",
+                "source": "editor",
+            },
+            timeout=30,
+        )
+        assert r_save.status_code == 200, r_save.text
+        thumb_id = r_save.json()["id"]
+
+        # Confirm in list
+        r_list = session.get(f"{BASE_URL}/api/thumbnail/list", headers=h, timeout=30)
+        assert r_list.status_code == 200
+        ids_before = [it["id"] for it in r_list.json()["items"]]
+        assert thumb_id in ids_before
+
+        # Delete
+        r_del = session.delete(f"{BASE_URL}/api/thumbnail/{thumb_id}", headers=h, timeout=30)
+        assert r_del.status_code == 200, r_del.text
+        body = r_del.json()
+        assert body.get("ok") is True
+        assert body.get("id") == thumb_id
+
+        # Confirm absent
+        r_list2 = session.get(f"{BASE_URL}/api/thumbnail/list", headers=h, timeout=30)
+        assert r_list2.status_code == 200
+        ids_after = [it["id"] for it in r_list2.json()["items"]]
+        assert thumb_id not in ids_after
+
+        # Delete again -> 404
+        r_del2 = session.delete(f"{BASE_URL}/api/thumbnail/{thumb_id}", headers=h, timeout=30)
+        assert r_del2.status_code == 404
+
+    def test_non_owner_admin_cannot_delete_others_thumbnail(self, session, test_user, auth_headers):
+        # test_user creates a thumbnail
+        h = test_user["headers"]
+        r_save = session.post(
+            f"{BASE_URL}/api/thumbnail/save",
+            headers=h,
+            json={
+                "image_data": PNG_B64,
+                "title": "TEST_owned_by_testuser",
+                "source": "editor",
+            },
+            timeout=30,
+        )
+        assert r_save.status_code == 200, r_save.text
+        thumb_id = r_save.json()["id"]
+
+        # Admin (different user) attempts to delete -> must be 403
+        r_del = session.delete(
+            f"{BASE_URL}/api/thumbnail/{thumb_id}", headers=auth_headers, timeout=30
+        )
+        assert r_del.status_code == 403, r_del.text
+
+        # Confirm doc still exists for owner
+        r_list = session.get(f"{BASE_URL}/api/thumbnail/list", headers=h, timeout=30)
+        assert r_list.status_code == 200
+        ids = [it["id"] for it in r_list.json()["items"]]
+        assert thumb_id in ids
+
+        # Cleanup: owner deletes
+        session.delete(f"{BASE_URL}/api/thumbnail/{thumb_id}", headers=h, timeout=30)
+
+
+class TestThumbnailGenerateNewFields:
+    """Validation/backward-compat for person_image + scene_images on /thumbnail/generate"""
+
+    def test_generate_legacy_no_refs_still_works(self, session, auth_headers):
+        # No person_image / scene_images / reference_images -> must NOT 422
+        r = session.post(
+            f"{BASE_URL}/api/thumbnail/generate",
+            headers=auth_headers,
+            json={"prompt": "cozy lo-fi study desk at night", "style": "lifestyle", "language": "en"},
+            timeout=120,
+        )
+        assert r.status_code == 200, f"status={r.status_code} body={r.text[:500]}"
+        d = r.json()
+        assert "id" in d and d["image"].startswith("data:image/")
+
+    def test_generate_with_person_image_validates(self, session, auth_headers):
+        # Pass new person_image field; ensure no 422; allow upstream LLM 5xx but flag it
+        r = session.post(
+            f"{BASE_URL}/api/thumbnail/generate",
+            headers=auth_headers,
+            json={
+                "prompt": "developer working on a futuristic coding setup",
+                "style": "tech",
+                "title_text": "DEV LIFE",
+                "language": "en",
+                "person_image": f"data:image/png;base64,{PNG_B64}",
+            },
+            timeout=180,
+        )
+        # 422 = validation failure on new field -> hard fail
+        assert r.status_code != 422, f"Validation failure on person_image: {r.text}"
+        if r.status_code == 200:
+            d = r.json()
+            assert "id" in d
+            assert d["image"].startswith("data:image/")
+        else:
+            # Upstream LLM problem - acceptable per request, but report body
+            print(f"[INFO] person_image generate non-200 (upstream allowed): {r.status_code} {r.text[:400]}")
+
+    def test_generate_with_scene_images_validates(self, session, auth_headers):
+        scenes = [f"data:image/png;base64,{PNG_B64}"] * 3
+        r = session.post(
+            f"{BASE_URL}/api/thumbnail/generate",
+            headers=auth_headers,
+            json={
+                "prompt": "epic mountain landscape gaming setup",
+                "style": "dramatic",
+                "language": "en",
+                "scene_images": scenes,
+            },
+            timeout=180,
+        )
+        assert r.status_code != 422, f"Validation failure on scene_images: {r.text}"
+        if r.status_code != 200:
+            print(f"[INFO] scene_images generate non-200 (upstream allowed): {r.status_code} {r.text[:400]}")
+
+    def test_generate_with_person_and_scenes_combined(self, session, auth_headers):
+        r = session.post(
+            f"{BASE_URL}/api/thumbnail/generate",
+            headers=auth_headers,
+            json={
+                "prompt": "person hiking through forest at sunset",
+                "style": "vibrant",
+                "language": "en",
+                "person_image": PNG_B64,  # no data: prefix - exercise strip path
+                "scene_images": [PNG_B64, f"data:image/png;base64,{PNG_B64}"],
+            },
+            timeout=180,
+        )
+        assert r.status_code != 422, f"Validation failure combined fields: {r.text}"
+        if r.status_code != 200:
+            print(f"[INFO] combined generate non-200 (upstream allowed): {r.status_code} {r.text[:400]}")
+
+
 # ---------------- Dashboard ----------------
 class TestDashboard:
     def test_stats(self, session, auth_headers):

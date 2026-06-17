@@ -17,11 +17,11 @@ export default function ThumbnailStudio() {
   const { lang, t } = useLang();
   const [mode, setMode] = useState("ai"); // ai | editor
   return (
-    <div className="p-8 md:p-12 max-w-7xl fade-up" data-testid="studio-page">
-      <div className="flex items-end justify-between mb-8">
+    <div className="p-4 sm:p-8 md:p-12 max-w-7xl fade-up" data-testid="studio-page">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
         <div>
           <div className="font-mono text-xs text-zinc-500 mb-2">STUDIO</div>
-          <h1 className="font-display text-5xl">{t("thumbnailStudio")}</h1>
+          <h1 className="font-display text-4xl sm:text-5xl">{t("thumbnailStudio")}</h1>
         </div>
         <div className="inline-flex border border-zinc-800 rounded-sm overflow-hidden font-mono text-xs">
           <button
@@ -50,11 +50,14 @@ function AIPanel() {
   const [loading, setLoading] = useState(false);
   const [image, setImage] = useState(null);
   const [history, setHistory] = useState([]);
-  const [refImages, setRefImages] = useState([]); // array of data URLs, max 3
+  const [personImage, setPersonImage] = useState(null); // single data URL
+  const [sceneImages, setSceneImages] = useState([]); // up to 4 data URLs
   const [useChannel, setUseChannel] = useState(false);
   const [compareMode, setCompareMode] = useState(false);
   const [imageB, setImageB] = useState(null); // vanilla version for A/B
-  const refFileInput = useRef(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const personFileInput = useRef(null);
+  const sceneFileInput = useRef(null);
 
   useEffect(() => {
     api.get("/thumbnail/list").then((r) => setHistory(r.data.items)).catch(() => {});
@@ -74,22 +77,45 @@ function AIPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const onUploadRef = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
-    const slots = 3 - refImages.length;
-    const accepted = files.slice(0, slots);
-    Promise.all(accepted.map((f) => new Promise((res) => {
-      const r = new FileReader();
-      r.onload = (ev) => res(ev.target.result);
-      r.readAsDataURL(f);
-    }))).then((urls) => {
-      setRefImages((prev) => [...prev, ...urls].slice(0, 3));
-    });
+  const readFileAsDataURL = (f) => new Promise((res) => {
+    const r = new FileReader();
+    r.onload = (ev) => res(ev.target.result);
+    r.readAsDataURL(f);
+  });
+
+  const onUploadPerson = async (e) => {
+    const f = e.target.files?.[0];
     e.target.value = "";
+    if (!f) return;
+    const url = await readFileAsDataURL(f);
+    setPersonImage(url);
   };
 
-  const removeRef = (i) => setRefImages(refImages.filter((_, idx) => idx !== i));
+  const onUploadScene = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!files.length) return;
+    const slots = 4 - sceneImages.length;
+    const accepted = files.slice(0, slots);
+    const urls = await Promise.all(accepted.map(readFileAsDataURL));
+    setSceneImages((prev) => [...prev, ...urls].slice(0, 4));
+  };
+
+  const removeScene = (i) => setSceneImages(sceneImages.filter((_, idx) => idx !== i));
+
+  const deleteThumb = async (id) => {
+    if (!window.confirm(lang === "tr" ? "Bu thumbnail silinsin mi?" : "Delete this thumbnail?")) return;
+    setDeletingId(id);
+    try {
+      await api.delete(`/thumbnail/${id}`);
+      setHistory((prev) => prev.filter((h) => h.id !== id));
+      toast.success(lang === "tr" ? "Silindi" : "Deleted");
+    } catch (e) {
+      toast.error(formatApiError(e.response?.data?.detail) || e.message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const generate = async () => {
     if (!prompt.trim()) {
@@ -102,7 +128,8 @@ function AIPanel() {
     try {
       const basePayload = {
         prompt, title_text: title, style, language: lang,
-        reference_images: refImages,
+        person_image: personImage || null,
+        scene_images: sceneImages,
       };
       if (compareMode && useChannel) {
         const [r1, r2] = await Promise.all([
@@ -136,16 +163,69 @@ function AIPanel() {
   };
 
   return (
-    <div className="grid lg:grid-cols-[1fr_360px] gap-4">
-      <div className="tk-card p-6">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4">
+      <div className="tk-card p-4 sm:p-6">
+        {/* PERSON UPLOAD */}
         <div className="flex items-center justify-between mb-3">
           <div className="font-mono text-xs text-zinc-500">
-            {lang === "tr" ? `REFERANS FOTOĞRAFLAR (OPSİYONEL · ${refImages.length}/3)` : `REFERENCE PHOTOS (OPTIONAL · ${refImages.length}/3)`}
+            {lang === "tr" ? `KİŞİ (1) · ${personImage ? "1/1" : "0/1"}` : `PERSON (1) · ${personImage ? "1/1" : "0/1"}`}
           </div>
-          {refImages.length > 0 && (
+          {personImage && (
             <button
-              onClick={() => setRefImages([])}
-              data-testid="ai-ref-clear-btn"
+              onClick={() => setPersonImage(null)}
+              data-testid="ai-person-clear-btn"
+              className="text-xs font-mono text-zinc-500 hover:text-[#FF3B30] inline-flex items-center gap-1"
+            >
+              <Trash2 className="w-3 h-3" /> {lang === "tr" ? "Kaldır" : "Remove"}
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-zinc-500 mb-3">
+          {lang === "tr"
+            ? "Kişinin yüzü ve vücudu birebir korunacak — sadece sahneye yerleştirilecek."
+            : "The person's face and body will be preserved exactly — only placed in the scene."}
+        </p>
+        <input
+          ref={personFileInput}
+          type="file"
+          accept="image/*"
+          onChange={onUploadPerson}
+          className="hidden"
+          data-testid="ai-person-upload-input"
+        />
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-5">
+          {personImage ? (
+            <div className="aspect-video bg-black border border-[#FF3B30]/60 rounded-sm overflow-hidden relative group" data-testid="ai-person-slot">
+              <img src={personImage} alt="person" className="w-full h-full object-cover" />
+              <button
+                onClick={() => setPersonImage(null)}
+                data-testid="ai-person-remove"
+                className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-[#FF3B30] rounded-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <X className="w-3.5 h-3.5 text-white" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => personFileInput.current?.click()}
+              data-testid="ai-person-upload-btn"
+              className="aspect-video bg-zinc-950 border border-dashed border-zinc-800 rounded-sm text-zinc-500 hover:text-white hover:border-[#FF3B30] transition-colors flex flex-col items-center justify-center"
+            >
+              <Upload className="w-5 h-5 mb-1" />
+              <span className="font-mono text-[10px]">+ {lang === "tr" ? "KİŞİ" : "PERSON"}</span>
+            </button>
+          )}
+        </div>
+
+        {/* SCENE UPLOAD */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-mono text-xs text-zinc-500">
+            {lang === "tr" ? `SAHNE / ARKA PLAN (4'E KADAR · ${sceneImages.length}/4)` : `SCENE / BACKGROUND (UP TO 4 · ${sceneImages.length}/4)`}
+          </div>
+          {sceneImages.length > 0 && (
+            <button
+              onClick={() => setSceneImages([])}
+              data-testid="ai-scene-clear-btn"
               className="text-xs font-mono text-zinc-500 hover:text-[#FF3B30] inline-flex items-center gap-1"
             >
               <Trash2 className="w-3 h-3" /> {lang === "tr" ? "Tümünü Kaldır" : "Clear all"}
@@ -154,36 +234,36 @@ function AIPanel() {
         </div>
         <p className="text-xs text-zinc-500 mb-3">
           {lang === "tr"
-            ? "3'e kadar fotoğraf yükle. AI hepsinden ilham alarak (kişi, sahne, renkler) yeni bir thumbnail üretir."
-            : "Upload up to 3 photos. AI will remix elements (subject, scene, palette) from ALL of them into one new thumbnail."}
+            ? "AI yalnızca arka plan/sahne/renkler için bu görsellerden ilham alır. Kişinin yüzü değişmez."
+            : "AI uses these only for background/scene/colors. The person's face stays unchanged."}
         </p>
         <input
-          ref={refFileInput}
+          ref={sceneFileInput}
           type="file"
           accept="image/*"
           multiple
-          onChange={onUploadRef}
+          onChange={onUploadScene}
           className="hidden"
-          data-testid="ai-ref-upload-input"
+          data-testid="ai-scene-upload-input"
         />
 
-        <div className="grid grid-cols-3 gap-2 mb-4">
-          {refImages.map((src, i) => (
-            <div key={i} className="aspect-video bg-black border border-zinc-800 rounded-sm overflow-hidden relative group" data-testid={`ai-ref-slot-${i}`}>
-              <img src={src} alt={`ref-${i}`} className="w-full h-full object-cover" />
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-4">
+          {sceneImages.map((src, i) => (
+            <div key={i} className="aspect-video bg-black border border-zinc-800 rounded-sm overflow-hidden relative group" data-testid={`ai-scene-slot-${i}`}>
+              <img src={src} alt={`scene-${i}`} className="w-full h-full object-cover" />
               <button
-                onClick={() => removeRef(i)}
-                data-testid={`ai-ref-remove-${i}`}
+                onClick={() => removeScene(i)}
+                data-testid={`ai-scene-remove-${i}`}
                 className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-[#FF3B30] rounded-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <X className="w-3.5 h-3.5 text-white" />
               </button>
             </div>
           ))}
-          {refImages.length < 3 && (
+          {sceneImages.length < 4 && (
             <button
-              onClick={() => refFileInput.current?.click()}
-              data-testid="ai-ref-upload-btn"
+              onClick={() => sceneFileInput.current?.click()}
+              data-testid="ai-scene-upload-btn"
               className="aspect-video bg-zinc-950 border border-dashed border-zinc-800 rounded-sm text-zinc-500 hover:text-white hover:border-[#FF3B30] transition-colors flex flex-col items-center justify-center"
             >
               <Upload className="w-5 h-5 mb-1" />
@@ -198,18 +278,18 @@ function AIPanel() {
           onChange={(e) => setPrompt(e.target.value)}
           placeholder={lang === "tr" ? "Örn: dağın zirvesinde drone ile selfie çeken bir vlogger, gün batımı" : "e.g. a vlogger taking a drone selfie on a mountain peak at sunset"}
           rows={4}
-          className="tk-input mb-4 resize-none"
+          className="tk-input mb-4 resize-none w-full"
           data-testid="ai-prompt-input"
         />
 
-        <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <div>
             <div className="font-mono text-xs text-zinc-500 mb-2">{t("titleOverlay").toUpperCase()}</div>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder={lang === "tr" ? "Opsiyonel" : "Optional"}
-              className="tk-input"
+              className="tk-input w-full"
               data-testid="ai-title-input"
             />
           </div>
@@ -302,8 +382,24 @@ function AIPanel() {
         ) : (
           <div className="space-y-3 max-h-[600px] overflow-y-auto scrollbar-thin pr-1" data-testid="ai-history-list">
             {history.map((h) => (
-              <div key={h.id} className="aspect-video bg-black border border-zinc-800 rounded-sm overflow-hidden cursor-pointer hover:border-[#FF3B30] transition-colors" onClick={() => setImage(h.image)}>
+              <div
+                key={h.id}
+                className="relative group aspect-video bg-black border border-zinc-800 rounded-sm overflow-hidden cursor-pointer hover:border-[#FF3B30] transition-colors"
+                data-testid={`history-item-${h.id}`}
+                onClick={() => setImage(h.image)}
+              >
                 <img src={h.image} alt="" className="w-full h-full object-cover" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); deleteThumb(h.id); }}
+                  disabled={deletingId === h.id}
+                  data-testid={`history-delete-${h.id}`}
+                  title={lang === "tr" ? "Sil" : "Delete"}
+                  className="absolute top-1.5 right-1.5 w-7 h-7 bg-black/70 hover:bg-[#FF3B30] rounded-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                >
+                  {deletingId === h.id
+                    ? <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
+                    : <Trash2 className="w-3.5 h-3.5 text-white" />}
+                </button>
               </div>
             ))}
           </div>
@@ -400,7 +496,7 @@ function EditorPanel() {
   };
 
   return (
-    <div className="grid lg:grid-cols-[280px_1fr] gap-4">
+    <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
       <aside className="tk-card p-5 space-y-5">
         <div>
           <div className="font-mono text-xs text-zinc-500 mb-2">{t("uploadImage").toUpperCase()}</div>

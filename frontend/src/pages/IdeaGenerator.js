@@ -56,17 +56,17 @@ export default function IdeaGenerator() {
   const viewColors = { low: "#A1A1AA", medium: "#F59E0B", high: "#10B981" };
 
   return (
-    <div className="p-8 md:p-12 max-w-7xl fade-up" data-testid="ideas-page">
+    <div className="p-4 sm:p-8 md:p-12 max-w-7xl fade-up" data-testid="ideas-page">
       <div className="mb-8">
         <div className="font-mono text-xs text-zinc-500 mb-2">IDEAS</div>
-        <h1 className="font-display text-5xl">{t("ideaGen")}</h1>
+        <h1 className="font-display text-4xl sm:text-5xl">{t("ideaGen")}</h1>
         <p className="text-zinc-500 mt-3 max-w-xl">
           {lang === "tr" ? "Kanal nişine uygun, tıklanma potansiyeli yüksek video fikirleri." : "Click-worthy video ideas tailored to your niche."}
         </p>
       </div>
 
       <form onSubmit={submit} className="tk-card p-6 mb-6 space-y-4" data-testid="ideas-form">
-        <div className="grid md:grid-cols-[1fr_140px_auto] gap-3 items-end">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_auto] gap-3 items-end">
           <div>
             <label className="font-mono text-xs text-zinc-500 mb-2 block">{t("niche").toUpperCase()}</label>
             <input
@@ -146,7 +146,7 @@ export default function IdeaGenerator() {
       {refsMeta.length > 0 && (
         <div className="tk-card p-4 mb-4" data-testid="ideas-refs-analyzed">
           <div className="font-mono text-xs text-zinc-500 mb-3">{lang === "tr" ? "ANALİZ EDİLEN VİDEOLAR" : "ANALYZED VIDEOS"}</div>
-          <div className="grid md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {refsMeta.map((r, i) => (
               <a key={i} href={r.url} target="_blank" rel="noreferrer" className="flex gap-3 items-start group">
                 {r.thumbnail && <img src={r.thumbnail} alt="" className="w-20 aspect-video object-cover border border-zinc-800 rounded-sm" />}
@@ -167,7 +167,7 @@ export default function IdeaGenerator() {
         </div>
       )}
 
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="ideas-results">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="ideas-results">
         {ideas.map((idea, i) => {
           const viewKey = (idea.estimated_views || "").toLowerCase();
           const color = viewColors[viewKey] || "#A1A1AA";

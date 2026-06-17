@@ -22,15 +22,15 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="p-8 md:p-12 max-w-7xl fade-up" data-testid="dashboard-page">
-      <div className="flex items-end justify-between mb-10">
+    <div className="p-4 sm:p-8 md:p-12 max-w-7xl fade-up" data-testid="dashboard-page">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-10">
         <div>
           <div className="font-mono text-xs text-zinc-500 mb-2">{t("welcome").toUpperCase()}</div>
-          <h1 className="font-display text-5xl">{user?.name || user?.email}</h1>
+          <h1 className="font-display text-4xl sm:text-5xl break-words">{user?.name || user?.email}</h1>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-10">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
         <StatCard label={t("statsThumbs")} value={stats?.thumbnails ?? 0} testid="stat-thumbnails" />
         <StatCard label={t("statsSEO")} value={stats?.seo_drafts ?? 0} testid="stat-seo" />
         <StatCard label={t("statsIdeas")} value={stats?.idea_sessions ?? 0} testid="stat-ideas" />
@@ -38,7 +38,7 @@ export default function Dashboard() {
 
       <ChannelProfileCard />
 
-      <div className="grid md:grid-cols-3 gap-4 mb-12">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
         {cards.map((c) => (
           <Link
             key={c.to}
@@ -56,7 +56,7 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="tk-card p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="font-display text-xl">{t("yourThumbnails")}</div>

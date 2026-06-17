@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 2 backend regression for TubeKit Thumbnail Studio updates (person_image/scene_images on generate + DELETE /api/thumbnail/{id}). Extended /app/backend/tests/test_tubekit.py with TestThumbnailDelete (5 cases) and TestThumbnailGenerateNewFields (4 cases). Full suite: 28/28 pytest passed in ~77s, including real LLM image generation for legacy, person-only, scene-only, and combined-person+scene flows. All ownership/auth/validation scenarios for the new DELETE endpoint behave exactly as specified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_tubekit.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now 896 lines — past the 700-line guideline. Routes (auth, seo, ideas, thumbnail, history, dashboard, channel) should be split into routers/ modules in the next refactor pass.",
+    "DELETE /api/thumbnail/{id} correctly: ObjectId() validation → 400 'Geçersiz id', missing doc → 404 'Görsel bulunamadı', non-owner → 403, owner success returns {ok, id}. Good ownership scope.",
+    "thumbnail/generate ordering is sane: person_image is ALWAYS image[0] then scene_images[0..n-1]; preserve_directive baked into the prompt so face/body preservation instruction is sent regardless of whether legacy or new fields are used. Legacy-only path still hits the model fine.",
+    "scenes_clean = scenes_clean[:4] hard cap matches the 4-scene UX requirement — confirmed.",
+    "_strip_data_prefix uses split with maxsplit=1 — robust even if base64 contains commas inside (it won't, but safe).",
+    "No size/MIME validation on uploaded person_image/scene_images base64. A malicious client could ship multi-MB strings or non-image payloads. Consider a max-bytes check + optional magic-byte sniff before forwarding to the LLM.",
+    "Admin role bypass NOT implemented for DELETE — an admin cannot delete arbitrary users' thumbnails. If product wants moderation, expose this explicitly via a separate /api/admin/thumbnail/{id} route rather than weakening ownership on the user route. Current strict behavior is the safer default.",
+    "Error responses use FastAPI default `{detail: ...}` shape — matches existing endpoints (login etc.). Frontend should display `detail` for these errors."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_tubekit.py (added TestThumbnailDelete + TestThumbnailGenerateNewFields, +9 tests)"
+  ],
+  "success_rate": {"backend": "100% (28/28)", "frontend": "not tested this iteration (backend-only request)"},
+  "test_credentials": "admin@tubekit.app / admin123 (from /app/memory/test_credentials.md). Fresh test users registered via POST /api/auth/register during tests.",
+  "seed_data_creation": "Each run registers a fresh test_user_<uuid>@example.com and creates/deletes 2 small TEST_-prefixed thumbnails; one is cleaned up after the 403 test, one is fully deleted by owner.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: `python -m pytest backend/tests/test_tubekit.py -v` (~77s end-to-end including 4 real LLM image generations). TestThumbnailDelete + TestThumbnailGenerateNewFields are the regression set for this iteration. Frontend mobile hamburger + history-delete-{id} trash icons were NOT covered here per request scope — they need a Playwright pass next iteration. The session-scoped `test_user` fixture is reused across delete + non-owner tests; if you add more delete tests, prefer creating a per-test thumbnail to avoid cross-test state leak.",
+  "rca of the issue": "No bug to RCA — all 28 tests green. The new DELETE contract matches the spec exactly: 400 'Geçersiz id', 404 'Görsel bulunamadı', 403 for non-owner, 200 {ok:true,id} for owner, and 401 without Bearer token. Generate endpoint accepts person_image + scene_images and remains backward-compatible with reference_image(s)."
+}
